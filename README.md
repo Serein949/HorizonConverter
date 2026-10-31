@@ -290,3 +290,26 @@ certutil -delstore -user Root 583EEC3674E239898741C9809B2EF06E96F7E748
 certutil -delstore -user TrustedPublisher 583EEC3674E239898741C9809B2EF06E96F7E748
 Remove-Item Cert:\CurrentUser\My\583EEC3674E239898741C9809B2EF06E96F7E748
 ```
+
+---
+
+## 14. 安卓 / 其他平台
+
+**核心库是可移植的**：`AeroflyConv.Core` 6501 行、零平台 API（没有 System.Drawing / DllImport /
+Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
+
+已经验证的落地方式：
+
+| 方式 | 状态 | 命令 |
+|---|---|---|
+| Linux / Android(Termux) 命令行 | ? 已构建可用 | `dotnet publish -r linux-arm64 --self-contained` → `dist/AeroflyConv-android-termux-arm64.zip` |
+| .NET for Android 原生小 App | 待做（需 Android SDK） | 复用 Core，SAF 文件选择 + 进度 + 保存到 Download |
+| MAUI 跨平台 GUI | 待做（需 `maui-android` workload） | 界面需重写 |
+
+在 Android 上用之前要知道的两件事：
+
+1. **存储限制**：Android 11+ 里 `Android/data/<包名>/` 对其他 App（Termux 也算）不可读。
+   如果 Aerofly FS Global 的内容在这个目录，必须先 root / Shizuku，或把文件复制到
+   `Download` 再用本工具处理。
+2. **ASTC**：部分移动设备用 ASTC 贴图，本项目只支持 ETC2/ETC1（解码）+ ETC2（编码），
+   遇到 ASTC 会明确报错。要完整支持移动端需要补一个 ASTC 解码器。
