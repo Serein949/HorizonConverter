@@ -82,6 +82,12 @@ internal static class Program
                 case "--no-overwrite":
                     options.Overwrite = false;
                     break;
+                case "--size":
+                    options.TargetTextureSize = int.Parse(RequireArg(args, ref i, arg));
+                    break;
+                case "--no-fit":
+                    options.FitExistingTexture = false;
+                    break;
                 case "--zoom":
                     options.TtcZoom = int.Parse(RequireArg(args, ref i, arg));
                     break;
@@ -253,6 +259,8 @@ internal static class Program
                   --no-mipmaps        TTC: write the top mip only
                   --no-compress       TTX: write an uncompressed container
                   --png-quality <q>   fast (default) | balanced | best
+                  --size <n>          force the output texture size (power of two, e.g. 4096)
+                  --no-fit            do not match the size/format of an existing .ttx
                   --zoom <n>          TTC header "extra"/zoom (default: from map_N_ name)
                   --no-overwrite      skip files that already exist
                   --info              only print metadata
@@ -267,6 +275,7 @@ internal static class Program
             """);
     }
 }
+
 
 
 

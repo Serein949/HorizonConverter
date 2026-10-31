@@ -71,6 +71,15 @@ public static class MipChain
         }
     }
 
+    /// <summary>Nearest power of two to <paramref name="value"/> (at least 4, at most 16384).</summary>
+    public static int NearestPowerOfTwo(int value)
+    {
+        int floor = FloorPowerOfTwo(Math.Max(1, value));
+        int ceil = floor <= 1 ? 1 : floor * 2;
+        int result = value - floor <= ceil - value ? floor : ceil;
+        return Math.Clamp(result, 4, 16384);
+    }
+
     /// <summary>Largest power of two that is &lt;= value (at least 1).</summary>
     public static int FloorPowerOfTwo(int value)
     {
@@ -241,5 +250,6 @@ public static class MipChain
         return dest;
     }
 }
+
 
 

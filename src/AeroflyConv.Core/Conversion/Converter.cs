@@ -60,6 +60,13 @@ public sealed class ConvertOptions
     public bool FitExistingTexture { get; set; } = true;
 
     /// <summary>
+    /// Force the output texture's longest side to this many pixels (must be a power of two).
+    /// Null = automatic: match the existing slot when overwriting, otherwise the nearest
+    /// power of two below the source size.
+    /// </summary>
+    public int? TargetTextureSize { get; set; }
+
+    /// <summary>
     /// True when <see cref="Flip"/> was chosen explicitly (CLI --flip/--no-flip, GUI checkbox).
     /// When false the pipeline decides per file: texture modes flip, everything else does not.
     /// </summary>
@@ -406,6 +413,17 @@ public static class Converter
     /// Explains why a decoded texture may show a black area in ordinary image viewers: those pixels
     /// are fully transparent (alpha = 0) and many viewers paint transparency as black.
     /// </summary>
+    /// <summary>Scales width/height so the longest side becomes <paramref name="longest"/> (power of two).</summary>
+    private static (int W, int H) FitSize(int width, int height, int longest)
+    {
+        if (width <= 0 || height <= 0) return (longest, longest);
+        double scale = longest / (double)Math.Max(width, height);
+        int w = MipChain.NearestPowerOfTwo(Math.Max(1, (int)Math.Round(width * scale)));
+        int h = MipChain.NearestPowerOfTwo(Math.Max(1, (int)Math.Round(height * scale)));
+        return (Math.Min(w, 16384), Math.Min(h, 16384));
+    }
+
+    /// <summary>Explains why a decoded texture may show a black area in ordinary image viewers.</summary>
     private static void LogAlphaInfo(byte[] rgba, Action<string>? log)
     {
         if (log is null || rgba.Length == 0) return;
@@ -423,11 +441,18 @@ public static class Converter
         log?.Invoke($"Reading {Path.GetFileName(input)} ...");
         (byte[] rgba, int w, int h) = ImageIo.LoadRgba(input);
 
-        // A texture slot expects a fixed size (usually power-of-two). When we are replacing an
-        // existing .ttx, adopt its dimensions so the game keeps sampling it correctly.
+        // A texture slot expects a fixed size and GPU format. When we overwrite an existing .ttx,
+        // adopt both so the game keeps sampling the slot correctly; an explicit --size / GUI "Size"
+        // choice overrides the slot size (e.g. 4096 for a sharper livery).
         int targetW = 0, targetH = 0;
-        if (options.FitExistingTexture && File.Exists(output) &&
-            output.EndsWith(".ttx", StringComparison.OrdinalIgnoreCase))
+        string? targetFormat = null;
+
+        if (options.TargetTextureSize is int forced && forced >= 32)
+        {
+            (targetW, targetH) = FitSize(w, h, forced);
+        }
+        else if (options.FitExistingTexture && File.Exists(output) &&
+                 output.EndsWith(".ttx", StringComparison.OrdinalIgnoreCase))
         {
             try
             {
@@ -436,6 +461,8 @@ public static class Converter
                 {
                     targetW = existing.Width;
                     targetH = existing.Height;
+                    if (TextureFormats.IsSupportedDecode(existing.Format))
+                        targetFormat = existing.Format;
                 }
             }
             catch (Exception)
@@ -446,7 +473,7 @@ public static class Converter
 
         if (targetW > 0 && (targetW != w || targetH != h))
         {
-            log?.Invoke($"resizing {w}x{h} -> {targetW}x{targetH} to match the texture being replaced");
+            log?.Invoke($"resizing {w}x{h} -> {targetW}x{targetH}");
             rgba = MipChain.Resample(rgba, w, h, targetW, targetH);
             w = targetW;
             h = targetH;
@@ -461,14 +488,21 @@ public static class Converter
             h = nh;
         }
 
-        log?.Invoke($"Encoding {options.TtxFormat} ...");
-        TtxFile.EncodeResult result = TtxFile.Encode(rgba, w, h, options.TtxFormat, options.Flip,
+        string format = targetFormat ?? options.TtxFormat;
+        if (targetFormat is not null &&
+            TextureFormats.Canonical(options.TtxFormat) != targetFormat &&
+            options.TtxFormat != TextureFormats.AutoDxt)
+        {
+            log?.Invoke($"using the existing slot format ({targetFormat})");
+        }
+
+        log?.Invoke($"Encoding {format} ...");
+        TtxFile.EncodeResult result = TtxFile.Encode(rgba, w, h, format, options.Flip,
             options.CompressTtx, log);
         File.WriteAllBytes(output, result.Data);
         return $"{result.Format} {result.Width}x{result.Height} mips={result.Mips} " +
                $"{result.Data.Length:N0} bytes";
     }
-
     private static string TsbToWav(string input, string output, Action<string>? log)
     {
         log?.Invoke($"Decoding {Path.GetFileName(input)} ...");
@@ -583,6 +617,9 @@ public static class Converter
         }
     }
 }
+
+
+
 
 
 

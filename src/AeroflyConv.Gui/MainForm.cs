@@ -24,7 +24,8 @@ internal sealed class MainForm : Form
     private readonly GlassButton _clearButton = new() { Text = "Clear", Width = 86 };
     private readonly GlassButton _convertButton = new() { Text = "Convert", Primary = true, Width = 130 };
     private readonly GlassButton _openFolderButton = new() { Text = "Open output folder", Width = 168 };
-    private readonly GlassButton _outDirButton = new() { Text = "Same folder as source", Width = 330 };
+    private readonly GlassButton _outDirButton = new() { Text = "Same folder as source", Width = 290 };
+    private readonly GlassSelect _sizeSelect = new();
     private readonly GlassButton _outDirResetButton = new() { Text = "\u2715", Width = 40 };
     private string? _outputDirectory;
     private readonly GlowProgressBar _progress = new();
@@ -333,9 +334,29 @@ internal sealed class MainForm : Form
             _outputDirectory = null;
             _outDirButton.Text = "Same folder as source";
         };
+        var sizeLabel = new Label
+        {
+            Text = "Size",
+            ForeColor = Theme.TextMuted,
+            AutoSize = true,
+            Margin = new Padding(10, 12, 8, 0),
+            BackColor = Color.Transparent,
+        };
+        _sizeSelect.Width = 190;
+        _sizeSelect.Height = 30;
+        _sizeSelect.Margin = new Padding(0, 3, 0, 0);
+        _sizeSelect.SetItems([
+            "Match original",
+            "4096 px",
+            "2048 px",
+            "1024 px",
+            "Source (max PO2)",
+        ]);
         row3.Controls.Add(outLabel);
         row3.Controls.Add(_outDirButton);
         row3.Controls.Add(_outDirResetButton);
+        row3.Controls.Add(sizeLabel);
+        row3.Controls.Add(_sizeSelect);
 
         optionsHost.Controls.Add(row3);
         optionsHost.Controls.Add(row2);
@@ -583,6 +604,14 @@ internal sealed class MainForm : Form
         _ => "dxt1",
     };
 
+    private int? SelectedTextureSize => _sizeSelect.SelectedIndex switch
+    {
+        1 => 4096,
+        2 => 2048,
+        3 => 1024,
+        _ => null,
+    };
+
     private void ChooseOutputDirectory()
     {
         using var dialog = new FolderBrowserDialog
@@ -677,6 +706,8 @@ internal sealed class MainForm : Form
             CompressTtx = _compressCheck.Checked,
             MaxParallelism = SelectedThreads,
             OutputDirectory = _outputDirectory,
+            TargetTextureSize = SelectedTextureSize,
+            FitExistingTexture = _sizeSelect.SelectedIndex <= 0,
         };
 
         var files = _fileList.Items.Cast<string>().ToList();
@@ -787,6 +818,7 @@ internal sealed class MainForm : Form
         base.OnFormClosed(e);
     }
 }
+
 
 
 
