@@ -162,3 +162,28 @@ tests/vectors/             å‚è€ƒæ•°æ®ï¼ˆçº¦ 14 MBï¼‰
 refharness/                ç”Ÿæˆå‚è€ƒæ•°æ®çš„ Python è„šæœ¬ï¼ˆéœ€è¦åŸç‰ˆä»“åº“ï¼‰
 docs/screenshot.png        GUI æˆªå›¾
 ```
+
+---
+
+## 8. ³£¼ûÎÊÌâ£ºÔËĞĞÒ»»á¶ùºóÉÁÍË£¨NahimicOSD.dll£©
+
+Windows ÊÂ¼şÈÕÖ¾ÀïÈç¹û¿´µ½£º
+
+```
+Faulting application name: AeroflyConv.exe
+Faulting module name: NahimicOSD.dll, version: 2.2.25.0
+Exception code: 0xc0000005
+```
+
+Õâ²»ÊÇ±¾³ÌĞòµÄÎÊÌâ£ºDell / Alienware »úÆ÷ÉÏµÄ **Alienware Sound Center£¨Nahimic£©** »á°Ñ
+`NahimicOSD.dll` ×¢Èëµ½Ã¿¸ö½ø³Ì£¬¶øÕâ¸öÄ£¿éÓĞÒÑÖªµÄ±ÀÀ£È±Ïİ£¨Ô­Éú 0xC0000005£©¡£
+
+´¦Àí°ì·¨£¨ÈÎÑ¡ÆäÒ»£©£º
+
+1. Ë«»÷³ÌĞòÄ¿Â¼ÀïµÄ `NahimicOSD-Í£Ö¹.cmd`£¨»áÇëÇó¹ÜÀíÔ±È¨ÏŞ£©£¬ÔÙÆô¶¯ AeroflyConv£»
+   ĞèÒª»¹Ô­Ê±ÔËĞĞ `NahimicOSD-»Ö¸´.cmd`¡£
+2. `services.msc` ¡ú ÕÒµ½ `NahimicService` ¡ú Í£Ö¹£¬²¢°ÑÆô¶¯ÀàĞÍ¸Ä³É¡¸½ûÓÃ¡¹£¨ÓÀ¾ÃÉúĞ§£©¡£
+3. ÔÚ Alienware Sound Center / Nahimic Àï¹Ø±Õ OSD / ÉùÒô×·×ÙÀàµÄµş²ã¹¦ÄÜ¡£
+4. Ö»ÓÃÃüÁîĞĞ°æ£¨`dist\cli\AeroflyConv.exe`£©Åú´¦Àí£¬Ëü²»¿ª´°¿Ú£¬¸ü²»ÈİÒ×±» OSD Åöµ½¡£
+
+³ÌĞòÆô¶¯Ê±Èç¹û¼ì²âµ½¸Ã DLL ÒÑ×¢Èë£¬»áÔÚÈÕÖ¾Àï¸ø³öºìÉ«¾¯¸æ²¢µ¯´°ÌáÊ¾¡£

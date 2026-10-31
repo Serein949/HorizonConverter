@@ -80,6 +80,52 @@ internal sealed class MainForm : Form
         BuildLayout();
         BuildNav();
         UpdateModeUi();
+        Shown += (_, _) => WarnAboutInjectedOsd();
+    }
+
+    /// <summary>
+    /// Nahimic / Alienware Sound Center injects NahimicOSD.dll into every process and has a known
+    /// access-violation bug (0xC0000005) that kills apps after a while. Tell the user when it is present.
+    /// </summary>
+    private void WarnAboutInjectedOsd()
+    {
+        string? module = null;
+        try
+        {
+            foreach (ProcessModule m in Process.GetCurrentProcess().Modules)
+            {
+                if (m.ModuleName.Contains("NahimicOSD", StringComparison.OrdinalIgnoreCase))
+                {
+                    module = m.FileName;
+                    break;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // enumeration can fail on protected modules; not fatal
+        }
+
+        if (module is null) return;
+
+        AppendLog($"警告：{module} 已注入本进程。", error: true);
+        AppendLog("Nahimic / Alienware Sound Center 的 OSD 模块有已知崩溃缺陷（0xC0000005），会让本程序运行一段时间后闪退。" +
+                  "可以运行程序目录里的「NahimicOSD-停止.cmd」后再试。", error: true);
+        _statusLabel.Text = "Nahimic OSD 已注入（已知闪退原因）";
+
+        bool batchMode = Environment.GetCommandLineArgs().Contains("--screenshot");
+        if (!batchMode)
+        {
+            MessageBox.Show(this,
+                "检测到 NahimicOSD.dll（Alienware Sound Center / Nahimic 音效 OSD）已注入本程序。\n\n" +
+                "这个模块有已知缺陷，会让程序运行一段时间后闪退（Windows 事件日志里的 0xC0000005 就是它）。\n\n" +
+                "解决办法：\n" +
+                "1. 关闭本程序；\n" +
+                "2. 右键程序目录里的「NahimicOSD-停止.cmd」→ 以管理员身份运行；\n" +
+                "3. 再打开 AeroflyConv。\n\n" +
+                "（该脚本只是临时停掉 Nahimic 服务，随时可用「NahimicOSD-恢复.cmd」还原。）",
+                "AeroflyConv - 兼容性提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -679,6 +725,7 @@ internal sealed class MainForm : Form
         base.OnFormClosed(e);
     }
 }
+
 
 
 
