@@ -262,3 +262,31 @@ v1.1 自动处理：
 
 命令行：`--size 4096`。显存/加载时间随面积线性增长：40962 约为 20482 的 4 倍，
 81922 又是 40962 的 4 倍（DXT1 单张约 11 MB → 43 MB，含 mip）。
+
+---
+
+## 13. 去掉「Windows 已保护你的电脑 / 仍要运行」
+
+这是 SmartScreen 对**未签名程序**的提示。本仓库提供一个一键处理脚本（当前用户证书，不需要管理员）：
+
+```powershell
+# 先关闭 AeroflyConv（签名需要写文件）
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/sign-app.ps1
+# 或在发布目录里双击：签名-去除安全提示.cmd
+```
+
+它会：
+
+1. 创建自签代码签名证书 `CN=AeroflyConv Local Publishing`（当前用户，5 年）；
+2. 把该证书导入 `当前用户\受信任的根证书颁发机构` 与 `受信任的发布者`；
+3. 给所有 `AeroflyConv.exe` 签名（SHA-256）。
+
+之后双击 exe 不再弹"仍要运行"。`build.ps1` 发布会自动调用它（签名证书存在时）。
+
+撤销（删除信任与证书）：
+
+```powershell
+certutil -delstore -user Root 583EEC3674E239898741C9809B2EF06E96F7E748
+certutil -delstore -user TrustedPublisher 583EEC3674E239898741C9809B2EF06E96F7E748
+Remove-Item Cert:\CurrentUser\My\583EEC3674E239898741C9809B2EF06E96F7E748
+```
