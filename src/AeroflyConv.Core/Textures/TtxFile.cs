@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using AeroflyConv.Core.Codecs;
 using AeroflyConv.Core.Tm;
 
@@ -34,7 +34,7 @@ public sealed class DecodedTexture
 public static class TtxFile
 {
     /// <summary>Decompresses <c>compress_file=true</c> files; plain files pass through unchanged.</summary>
-    public static byte[] Inflate(ReadOnlySpan<byte> raw) => TmCompress.InflateFile(raw);
+    public static byte[] Inflate(ReadOnlySpan<byte> raw) => TmCompress.InflateFile(TmFormats.Deobfuscate(raw));
 
     /// <summary>
     /// Parses an already inflated (plain) TTX container. Mirrors the reference walker:
@@ -127,8 +127,9 @@ public static class TtxFile
     /// <summary>Full decode of a TTX file (compressed or plain) into RGBA8.</summary>
     public static DecodedTexture Decode(ReadOnlySpan<byte> raw, bool flip = false)
     {
-        bool compressed = TmFormats.IsCompressedFile(raw);
-        byte[] inner = compressed ? TmCompress.InflateFile(raw) : raw.ToArray();
+        byte[] normalized = TmFormats.Deobfuscate(raw);
+        bool compressed = TmFormats.IsCompressedFile(normalized);
+        byte[] inner = compressed ? TmCompress.InflateFile(normalized) : normalized;
         TtxInfo info = Parse(inner);
         byte[] rgba = DecodeRgba(info, out string? note);
         if (flip) rgba = MipChain.FlipVertical(rgba, info.Width, info.Height);
@@ -494,3 +495,4 @@ public static class TtxFile
         return WrapContainer(TmFormats.MagicCompressed, TmNames.NameOuter, nested);
     }
 }
+

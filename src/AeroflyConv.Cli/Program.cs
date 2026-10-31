@@ -102,8 +102,10 @@ internal static class Program
             return 2;
         }
 
+        // Aerofly stores texture rows bottom-up, so texture output is upright only when flipped.
         if (!flipSet)
-            options.Flip = mode is ConversionMode.TtcToPng or ConversionMode.PngToTtc;
+            options.Flip = mode is ConversionMode.TtxToPng or ConversionMode.PngToTtx
+                or ConversionMode.TtcToPng or ConversionMode.PngToTtc;
 
         if (info)
             return RunInfo(paths);
@@ -248,7 +250,8 @@ internal static class Program
                                       dxt_auto, dxt1, dxt5, type_rgba, type_r,
                                       etc2, type_rgba_etc2
                   --ttc-format <f>    TTC target format: dxt1 (default), dxt5, etc2, r8
-                  --flip/--no-flip    flip textures vertically (default: only TTC modes)
+                  --flip/--no-flip    flip textures vertically (default: on for texture modes,
+                                      Aerofly stores textures bottom-up)
                   --no-mipmaps        TTC: write the top mip only
                   --no-compress       TTX: write an uncompressed container
                   --png-quality <q>   fast (default) | balanced | best
@@ -266,4 +269,5 @@ internal static class Program
             """);
     }
 }
+
 

@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using AeroflyConv.Core.Lzham;
 
 namespace AeroflyConv.Core.Tm;
@@ -55,9 +55,11 @@ public static class TmCompress
     /// </summary>
     public static byte[] InflateFile(ReadOnlySpan<byte> raw)
     {
-        if (!TmFormats.IsCompressedFile(raw))
-            return raw.ToArray();
+        byte[] normalized = TmFormats.Deobfuscate(raw);
+        if (!TmFormats.IsCompressedFile(normalized))
+            return normalized;
 
+        raw = normalized;
         if (!TryFindCompressBlob(raw, out int offset, out int length))
             throw new AeroflyFormatException(
                 "compressed container does not contain an LZHAM data blob");
@@ -107,3 +109,4 @@ public static class TmCompress
         return false;
     }
 }
+

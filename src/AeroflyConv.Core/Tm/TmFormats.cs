@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 
 namespace AeroflyConv.Core.Tm;
 
@@ -19,6 +19,33 @@ public static class TmFormats
     public static ReadOnlySpan<byte> MagicPlain => [0xA6, 0x97, 0xE9, 0xAC, 0xF9, 0xFC, 0xC1, 0x7C];
     public static ReadOnlySpan<byte> MagicSound => [0x5F, 0x34, 0x99, 0x6E, 0xF3, 0x11, 0x96, 0x9D];
 
+    /// <summary>
+    /// Second <c>compress_file</c> magic used by the FS4 livery files written into the user folder.
+    /// Differs from <see cref="MagicCompressed"/> only in the first two bytes.
+    /// </summary>
+    public static ReadOnlySpan<byte> MagicCompressedAlt => [0xA5, 0xA4, 0x24, 0xC7, 0xB7, 0x3C, 0xEB, 0xB7];
+
+    /// <summary>
+    /// User-folder livery textures are stored XOR-obfuscated in their first 0x40 bytes (the two
+    /// wrapper headers) with <see cref="ObfuscationKey"/>. This is the on-disk signature.
+    /// </summary>
+    public static ReadOnlySpan<byte> MagicObfuscated => [0xFF, 0xFE, 0x7E, 0x9D, 0xED, 0x66, 0xB1, 0xED];
+
+    public const byte ObfuscationKey = 0x5A;
+    public const int ObfuscatedHeaderLength = 0x40;
+
+    /// <summary>Undoes the livery obfuscation; returns a copy of <paramref name="raw"/> otherwise.</summary>
+    public static byte[] Deobfuscate(ReadOnlySpan<byte> raw)
+    {
+        if (!HasMagic(raw, MagicObfuscated) || raw.Length < ObfuscatedHeaderLength)
+            return raw.ToArray();
+
+        byte[] copy = raw.ToArray();
+        for (int i = 0; i < ObfuscatedHeaderLength; i++)
+            copy[i] ^= ObfuscationKey;
+        return copy;
+    }
+
     public const int ChunkHeaderSize = 32;
 
     public static ulong U64(ReadOnlySpan<byte> b, int off) =>
@@ -30,8 +57,9 @@ public static class TmFormats
     public static bool HasMagic(ReadOnlySpan<byte> data, ReadOnlySpan<byte> magic) =>
         data.Length >= 8 && data[..8].SequenceEqual(magic);
 
-    /// <summary>True for the <c>compress_file=true</c> (LZHAM) flavour.</summary>
-    public static bool IsCompressedFile(ReadOnlySpan<byte> data) => HasMagic(data, MagicCompressed);
+    /// <summary>True for a <c>compress_file=true</c> (LZHAM) flavour, either magic variant.</summary>
+    public static bool IsCompressedFile(ReadOnlySpan<byte> data) =>
+        HasMagic(data, MagicCompressed) || HasMagic(data, MagicCompressedAlt);
 
     /// <summary>True for an uncompressed (<c>compress_file=false</c>) container.</summary>
     public static bool IsPlainFile(ReadOnlySpan<byte> data) => HasMagic(data, MagicPlain);
@@ -137,3 +165,4 @@ public static class TmFormats
         return crc ^ 0xFFFFFFFFu;
     }
 }
+

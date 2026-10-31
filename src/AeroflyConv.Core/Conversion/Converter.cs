@@ -379,10 +379,27 @@ public static class Converter
         DecodedTexture texture = TtxFile.Decode(File.ReadAllBytes(input), options.Flip);
         if (!texture.PowerOfTwo)
             log?.Invoke(TmFormats.PowerOfTwoWarning(texture.Width, texture.Height));
+        LogAlphaInfo(texture.Rgba, log);
         log?.Invoke($"Writing PNG ({texture.Format} {texture.Width}x{texture.Height} mips={texture.Mips}) ...");
         ImageIo.SavePng(output, texture.Rgba, texture.Width, texture.Height, texture.PngHasAlpha, options.PngQuality);
         return $"{texture.Format} {texture.Width}x{texture.Height} mips={texture.Mips}" +
                (texture.Compressed ? " (LZHAM)" : "");
+    }
+
+    /// <summary>
+    /// Explains why a decoded texture may show a black area in ordinary image viewers: those pixels
+    /// are fully transparent (alpha = 0) and many viewers paint transparency as black.
+    /// </summary>
+    private static void LogAlphaInfo(byte[] rgba, Action<string>? log)
+    {
+        if (log is null || rgba.Length == 0) return;
+        int pixels = rgba.Length / 4;
+        int transparent = 0;
+        for (int i = 3; i < rgba.Length; i += 4)
+            if (rgba[i] == 0) transparent++;
+        if (transparent == 0) return;
+        log.Invoke($"note: {transparent * 100.0 / pixels:0.0}% of the pixels are transparent (alpha=0); " +
+                   "viewers that ignore alpha show them as black");
     }
 
     private static string PngToTtx(string input, string output, ConvertOptions options, Action<string>? log)
@@ -435,6 +452,7 @@ public static class Converter
     {
         log?.Invoke($"Reading {Path.GetFileName(input)} ...");
         DecodedTexture texture = TtcFile.Decode(File.ReadAllBytes(input), options.Flip);
+        LogAlphaInfo(texture.Rgba, log);
         log?.Invoke($"Writing PNG ({texture.Format} {texture.Width}x{texture.Height}) ...");
         ImageIo.SavePng(output, texture.Rgba, texture.Width, texture.Height, withAlpha: true, options.PngQuality);
         return $"{texture.Format} {texture.Width}x{texture.Height} mips={texture.Mips}";
@@ -503,6 +521,7 @@ public static class Converter
         }
     }
 }
+
 
 
 

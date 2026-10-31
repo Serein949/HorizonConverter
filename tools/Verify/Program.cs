@@ -41,6 +41,7 @@ internal static class Program
         Section("TM -> TXT (generic dump)", () => { foreach (var e in manifest) CheckTm(e); });
         Section("TTC decode", CheckTtc);
         Section("Reference-encoded TTX (real LZHAM compressed blocks)", CheckEncoded);
+        Section("Livery (XOR-obfuscated) containers", CheckObfuscated);
         Section("Round trips (encode -> decode)", RoundTrips);
 
         Console.WriteLine();
@@ -202,6 +203,36 @@ internal static class Program
                 else Pass(r.File);
             }
             catch (Exception ex) { Fail($"{r.File}: {ex.Message}"); }
+        }
+    }
+
+    /// <summary>
+    /// FS4 livery textures in the user folder XOR the first 0x40 bytes with 0x5A and use their own
+    /// outer magic. Rebuilding that layout from a normal vector must decode to the same pixels.
+    /// </summary>
+    private static void CheckObfuscated()
+    {
+        var manifest = JsonSerializer.Deserialize<List<Entry>>(
+            File.ReadAllText(Path.Combine(_vectors, "manifest.json")), JsonOpts) ?? [];
+        int checkedCount = 0;
+        foreach (Entry e in manifest)
+        {
+            if (e.Ext != ".ttx" || e.RgbaSha256 is null || e.Fmt == "type_rg_rgtc2") continue;
+            if (checkedCount++ >= 3) break;
+            try
+            {
+                byte[] plain = File.ReadAllBytes(Path.Combine(_vectors, e.Id + e.Ext));
+                byte[] obfuscated = AeroflyConv.Core.Tm.TmFormats.Deobfuscate(plain); // normalise first
+                for (int i = 0; i < 0x40 && i < obfuscated.Length; i++) obfuscated[i] ^= 0x5A;
+                byte[] signature = [0xFF, 0xFE, 0x7E, 0x9D, 0xED, 0x66, 0xB1, 0xED];
+                signature.CopyTo(obfuscated, 0);
+
+                DecodedTexture tex = TtxFile.Decode(obfuscated);
+                if (Sha(tex.Rgba) != e.RgbaSha256)
+                    Fail($"{e.Id}: obfuscated decode differs");
+                else Pass($"{e.Id} obfuscated");
+            }
+            catch (Exception ex) { Fail($"{e.Id} obfuscated: {ex.Message}"); }
         }
     }
 
@@ -424,6 +455,7 @@ internal static class Program
         return mse <= 0 ? 99.0 : 10.0 * Math.Log10(255.0 * 255.0 / mse);
     }
 }
+
 
 
 

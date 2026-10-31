@@ -293,7 +293,7 @@ internal sealed class MainForm : Form
             BackColor = Theme.CardTop,
             Padding = new Padding(0, 10, 0, 0),
         };
-        ConfigureCheck(_flipCheck, "Flip vertically (liveries)");
+        ConfigureCheck(_flipCheck, "Flip vertically (Aerofly stores textures bottom-up)");
         ConfigureCheck(_mipmapsCheck, "TTC mipmaps");
         ConfigureCheck(_compressCheck, "Compress TTX (LZHAM)");
         _mipmapsCheck.Checked = true;
@@ -509,7 +509,7 @@ internal sealed class MainForm : Form
         _mipmapsRelevant = mode == ConversionMode.PngToTtc;
         _compressRelevant = mode == ConversionMode.PngToTtx;
         _flipCheck.Enabled = _flipRelevant;
-        _flipCheck.Checked = mode is ConversionMode.TtcToPng or ConversionMode.PngToTtc;
+        _flipCheck.Checked = _flipRelevant;
         _mipmapsCheck.Enabled = _mipmapsRelevant;
         _compressCheck.Enabled = _compressRelevant;
 
@@ -776,6 +776,8 @@ internal sealed class MainForm : Form
         base.OnFormClosed(e);
     }
 }
+
+
 
 
 

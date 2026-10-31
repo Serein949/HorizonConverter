@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Text;
 using AeroflyConv.Core.Tm;
 
@@ -98,9 +98,10 @@ public static class TsbFile
 {
     public static TsbSound Parse(ReadOnlySpan<byte> raw)
     {
-        byte[] inner = TmFormats.HasMagic(raw, TmFormats.MagicCompressed)
-            ? TmCompress.InflateFile(raw)
-            : raw.ToArray();
+        byte[] normalized = TmFormats.Deobfuscate(raw);
+        byte[] inner = TmFormats.IsCompressedFile(normalized)
+            ? TmCompress.InflateFile(normalized)
+            : normalized;
 
         int pos = TmFormats.SkipContainers(inner);
         string? format = null;
@@ -227,3 +228,4 @@ public static class TsbFile
         return chunk;
     }
 }
+

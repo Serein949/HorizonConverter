@@ -208,3 +208,23 @@ Exception code: 0xc0000005
 
 另外 "auto" 模式在扫描文件夹时只处理已知的输入扩展名（`.ttx .tsb .wav .mp3 .flac .ogg .ttc
 .toc .tsc .wad .tmb .tsl .zip .tme` 和图片），不会再对 `.json`、`.cfg` 之类的文件报"无法识别"。
+
+---
+
+## 10. 贴图方向与"黑色区域"
+
+* **上下颠倒**：Aerofly 的 TTX 贴图按自下而上的顺序存储。导出 PNG 时默认**已经翻转**，
+  所以打开就是正立的（GUI 里 `Flip vertically (Aerofly stores textures bottom-up)` 默认勾选，
+  命令行可用 `--no-flip` 关闭）。写回 TTX 时也默认翻转，因此"导出→编辑→导入"能对上。
+* **某个区域显示为纯黑**：那是 **alpha = 0 的透明像素**，照片查看器会把透明画成黑色
+  （A350 的 276 张 RGBA 输出里有 183 张底部带完全透明，属于贴图本身的内容）。
+  用 Photoshop / GIMP / 支持透明通道的查看器打开就是透明的。转换日志里现在会提示
+  "x% of the pixels are transparent (alpha=0)"。
+
+## 11. 用户目录里的涂装 TTX（原版读不了的那种）
+
+`Documents\Aerofly FS 4\aircraft\...` 里的自制涂装 `.ttx` 用的是另一种外层头：
+前 `0x40` 字节与 `0x5A` 异或，外层 magic 为 `a5 a4 24 c7 b7 3c eb b7`。
+原版 Python 工具会直接报 "not a TTX texture container"，本版已识别并解出
+（解完就是普通的 LZHAM `compress_file` 容器）。实测把整个 `Documents\Aerofly FS 4\aircraft`
+目录（含南航 A330 等涂装）25 个文件 3.8 秒转换完成。
