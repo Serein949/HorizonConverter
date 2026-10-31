@@ -102,10 +102,8 @@ internal static class Program
             return 2;
         }
 
-        // Aerofly stores texture rows bottom-up, so texture output is upright only when flipped.
-        if (!flipSet)
-            options.Flip = mode is ConversionMode.TtxToPng or ConversionMode.PngToTtx
-                or ConversionMode.TtcToPng or ConversionMode.PngToTtc;
+        // Aerofly stores texture rows bottom-up: texture modes flip unless --no-flip was given.
+        options.FlipExplicit = flipSet;
 
         if (info)
             return RunInfo(paths);
@@ -269,5 +267,6 @@ internal static class Program
             """);
     }
 }
+
 
 

@@ -53,6 +53,18 @@ public sealed class ConvertOptions
     /// </summary>
     public string? OutputDirectory { get; set; }
 
+    /// <summary>
+    /// When overwriting an existing .ttx, resize the source image to match the original
+    /// texture dimensions (Aerofly slots expect a fixed size, usually power-of-two).
+    /// </summary>
+    public bool FitExistingTexture { get; set; } = true;
+
+    /// <summary>
+    /// True when <see cref="Flip"/> was chosen explicitly (CLI --flip/--no-flip, GUI checkbox).
+    /// When false the pipeline decides per file: texture modes flip, everything else does not.
+    /// </summary>
+    public bool FlipExplicit { get; set; }
+
     /// <summary>Set by <see cref="Converter.ConvertAll"/> so folder conversions mirror their layout.</summary>
     public string? MirrorRoot { get; set; }
 
@@ -299,6 +311,10 @@ public static class Converter
         if (!string.IsNullOrEmpty(exeDir)) yield return Path.Combine(exeDir, "out");
     }
 
+    private static bool IsTextureMode(ConversionMode mode) =>
+        mode is ConversionMode.TtxToPng or ConversionMode.PngToTtx
+            or ConversionMode.TtcToPng or ConversionMode.PngToTtc;
+
     private static bool IsPermissionProblem(Exception ex) =>
         ex is UnauthorizedAccessException ||
         (ex is IOException && ex.Message.Contains("denied", StringComparison.OrdinalIgnoreCase));
@@ -406,8 +422,45 @@ public static class Converter
     {
         log?.Invoke($"Reading {Path.GetFileName(input)} ...");
         (byte[] rgba, int w, int h) = ImageIo.LoadRgba(input);
-        if (!TmFormats.IsPowerOfTwo(w) || !TmFormats.IsPowerOfTwo(h))
-            log?.Invoke(TmFormats.PowerOfTwoWarning(w, h));
+
+        // A texture slot expects a fixed size (usually power-of-two). When we are replacing an
+        // existing .ttx, adopt its dimensions so the game keeps sampling it correctly.
+        int targetW = 0, targetH = 0;
+        if (options.FitExistingTexture && File.Exists(output) &&
+            output.EndsWith(".ttx", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                TtxInfo existing = TtxFile.Parse(TtxFile.Inflate(File.ReadAllBytes(output)));
+                if (existing.Width >= 4 && existing.Height >= 4)
+                {
+                    targetW = existing.Width;
+                    targetH = existing.Height;
+                }
+            }
+            catch (Exception)
+            {
+                // unreadable existing file: fall back to power-of-two sizing below
+            }
+        }
+
+        if (targetW > 0 && (targetW != w || targetH != h))
+        {
+            log?.Invoke($"resizing {w}x{h} -> {targetW}x{targetH} to match the texture being replaced");
+            rgba = MipChain.Resample(rgba, w, h, targetW, targetH);
+            w = targetW;
+            h = targetH;
+        }
+        else if (!TmFormats.IsPowerOfTwo(w) || !TmFormats.IsPowerOfTwo(h))
+        {
+            int nw = MipChain.FloorPowerOfTwo(w);
+            int nh = MipChain.FloorPowerOfTwo(h);
+            log?.Invoke($"{TmFormats.PowerOfTwoWarning(w, h)} - resizing to {nw}x{nh}");
+            rgba = MipChain.Resample(rgba, w, h, nw, nh);
+            w = nw;
+            h = nh;
+        }
+
         log?.Invoke($"Encoding {options.TtxFormat} ...");
         TtxFile.EncodeResult result = TtxFile.Encode(rgba, w, h, options.TtxFormat, options.Flip,
             options.CompressTtx, log);
@@ -462,6 +515,15 @@ public static class Converter
     {
         log?.Invoke($"Reading {Path.GetFileName(input)} ...");
         (byte[] rgba, int w, int h) = ImageIo.LoadRgba(input);
+        if (!TmFormats.IsPowerOfTwo(w) || !TmFormats.IsPowerOfTwo(h))
+        {
+            int nw = MipChain.FloorPowerOfTwo(w);
+            int nh = MipChain.FloorPowerOfTwo(h);
+            log?.Invoke($"{TmFormats.PowerOfTwoWarning(w, h)} - resizing to {nw}x{nh}");
+            rgba = MipChain.Resample(rgba, w, h, nw, nh);
+            w = nw;
+            h = nh;
+        }
         TtcFile.EncodeResult result = TtcFile.Encode(rgba, w, h, options.TtcFormat, options.Flip,
             options.TtcMipmaps, options.TtcZoom, input);
         File.WriteAllBytes(output, result.Data);
@@ -521,6 +583,9 @@ public static class Converter
         }
     }
 }
+
+
+
 
 
 

@@ -670,6 +670,7 @@ internal sealed class MainForm : Form
         var options = new ConvertOptions
         {
             Flip = _flipCheck.Checked,
+            FlipExplicit = true,
             TtxFormat = SelectedTtxFormat,
             TtcFormat = SelectedTtcFormat,
             TtcMipmaps = _mipmapsCheck.Checked,
@@ -717,7 +718,17 @@ internal sealed class MainForm : Form
         {
             await Task.Run(() => Converter.ConvertAll(files, mode, options,
                 outcome => ((IProgress<ConversionOutcome>)progress).Report(outcome),
-                log: null, _cts.Token));
+                log: message =>
+                {
+                    if (message.Contains("WARNING", StringComparison.Ordinal) ||
+                        message.Contains("resizing", StringComparison.Ordinal) ||
+                        message.Contains("existing texture format", StringComparison.Ordinal) ||
+                        message.StartsWith("note:", StringComparison.Ordinal))
+                    {
+                        AppendLog("    " + message, error: message.Contains("WARNING", StringComparison.Ordinal));
+                    }
+                },
+                _cts.Token));
         }
         catch (OperationCanceledException)
         {
@@ -776,6 +787,8 @@ internal sealed class MainForm : Form
         base.OnFormClosed(e);
     }
 }
+
+
 
 
 
