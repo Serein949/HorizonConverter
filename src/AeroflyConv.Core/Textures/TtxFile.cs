@@ -209,9 +209,15 @@ public static class TtxFile
                 if (format.StartsWith("type_rgb_astc_", StringComparison.Ordinal) ||
                     format.StartsWith("type_rgba_astc_", StringComparison.Ordinal))
                 {
-                    throw new AeroflyFormatException(
-                        $"'{format}' (ASTC) is not supported by this converter yet - " +
-                        "it is only used by Aerofly mobile builds");
+                    (int blockWidth, int blockHeight) = TextureFormats.AstcBlockSize(format);
+                    if (blockWidth == 0 || blockHeight == 0 ||
+                        !AstcCodec.SupportsBlockSize(blockWidth, blockHeight))
+                    {
+                        throw new AeroflyFormatException(
+                            $"'{format}' uses an ASTC block size this build cannot decode");
+                    }
+                    AstcCodec.Decode(pix, w, h, blockWidth, blockHeight, rgba);
+                    return rgba;
                 }
                 throw new AeroflyFormatException($"unsupported texture format: {format}");
         }
@@ -495,4 +501,7 @@ public static class TtxFile
         return WrapContainer(TmFormats.MagicCompressed, TmNames.NameOuter, nested);
     }
 }
+
+
+
 

@@ -313,3 +313,45 @@ Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
    `Download` 再用本工具处理。
 2. **ASTC**：部分移动设备用 ASTC 贴图，本项目只支持 ETC2/ETC1（解码）+ ETC2（编码），
    遇到 ASTC 会明确报错。要完整支持移动端需要补一个 ASTC 解码器。
+
+---
+
+## 15. 安卓 App（实测可用）+ 移动版 ASTC 支持
+
+### 15.1 Android 应用
+
+`src/AeroflyConv.Android` 是一个 .NET for Android 原生应用（不是 MAUI，界面用手写 View），
+APK 在 `dist/v1.1/android/AeroflyConv-1.1.apk`（11 MB，minSdk 24 / target 36）。
+
+安装：`adb install -r AeroflyConv-1.1.apk`，或拷到手机后用文件管理器点击安装。
+
+使用：选模式 → `Select files`（系统文件选择器，可多选）→ `Convert` → 结果写到
+`Download/AeroflyConv/`。也可以在应用私有目录
+`Android/data/com.aeroflyconv.app/files/in` 里放文件，应用启动时会创建该目录
+（方便 adb / USB 批量投放）。
+
+**实机验证（vivo V2304A / Android 16 / arm64）**：
+
+| 转换 | 结果 |
+|---|---|
+| TTX (DXT5 10242) → PNG | 与桌面版**逐像素一致** |
+| TTX (BC5 法线 20482) → PNG | 与桌面版**逐像素一致** |
+| TSB → WAV | 与桌面版**逐字节一致** |
+| PNG → TTX (DXT1, 256×128, 9 mips) | 与桌面版**逐字节一致** |
+
+桌面版与手机版共用同一份 `AeroflyConv.Core`，所以行为完全一致（PNG 压缩字节可能因
+zlib 实现不同而略有差异，像素不变）。
+
+### 15.2 ASTC（Aerofly FS Global / 手机版贴图）
+
+手机版的贴图是 `type_rgb_astc_6x6` / `type_rgba_astc_5x5`（容器和 LZHAM 与桌面版相同）。
+本版新增**纯 C# 的 ASTC LDR 解码器**（`Codecs/AstcCodec.cs`）：
+
+* 支持 4×4 … 12×12 全部块尺寸、1–4 partition、dual-plane、全部 CEM、void-extent、FP16 端点；
+* 用手机 DLC 里的 **85 个真实 ASTC 贴图**做回归（`tests/vectors/astc`），与官方解码器
+  `texture2ddecoder` **逐字节一致**；
+* 桌面吞吐 ≈ **249 MB/s**（2048×2048 6×6 单张 60–130 ms）；
+* `tools/AstcCheck` 可单独跑这套回归。
+
+也就是说：**手机版的贴图现在可以在电脑上转成 PNG 了**。写回移动版仍然只支持 ETC2
+（不做 ASTC 编码——那需要内置一个完整 ASTC 编码器）。

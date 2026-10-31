@@ -1,4 +1,4 @@
-using System.Collections.Frozen;
+﻿using System.Collections.Frozen;
 
 namespace AeroflyConv.Core.Textures;
 
@@ -74,6 +74,9 @@ public static class TextureFormats
         "type_rgba_s3tc_dxt3" or "type_rgba_s3tc_dxt5" => true,
         "type_rg_rgtc2" => true,
         "type_rgb_etc2" or "type_rgb_etc1" or "type_rgba_etc2" => true,
+        _ when format.StartsWith("type_rgb_astc_", StringComparison.Ordinal) => true,
+        _ when format.StartsWith("type_rgba_astc_", StringComparison.Ordinal) => true,
         _ => false,
     };
 }
+

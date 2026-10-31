@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationId>com.aeroflyconv.app</ApplicationId>
+    <ApplicationVersion>2</ApplicationVersion>
+    <ApplicationDisplayVersion>1.1</ApplicationDisplayVersion>
+    <AssemblyName>AeroflyConv.Android</AssemblyName>
+    <RootNamespace>AeroflyConv.Android</RootNamespace>
+    <!-- ImageSharp and the audio decoders use reflection; keep trimming conservative. -->
+    <TrimMode>partial</TrimMode>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <NoWarn>$(NoWarn);NU1701;CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AeroflyConv.Core\AeroflyConv.Core.csproj" />
+  </ItemGroup>
+
+</Project>

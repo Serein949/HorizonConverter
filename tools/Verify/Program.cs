@@ -40,6 +40,7 @@ internal static class Program
         Section("TSB -> WAV", () => { foreach (var e in manifest) CheckTsb(e); });
         Section("TM -> TXT (generic dump)", () => { foreach (var e in manifest) CheckTm(e); });
         Section("TTC decode", CheckTtc);
+        Section("ASTC decode (Aerofly mobile)", CheckAstc);
         Section("Reference-encoded TTX (real LZHAM compressed blocks)", CheckEncoded);
         Section("Livery (XOR-obfuscated) containers", CheckObfuscated);
         Section("Round trips (encode -> decode)", RoundTrips);
@@ -175,6 +176,43 @@ internal static class Program
 
     private static string Truncate(string s) => s.Length <= 160 ? s : s[..160] + "...";
 
+    private sealed class AstcRef
+    {
+        public string File { get; set; } = "";
+        public string Format { get; set; } = "";
+        public int Width { get; set; }
+        public int Height { get; set; }
+        public long Bytes { get; set; }
+
+        [JsonPropertyName("rgba_sha256")]
+        public string RgbaSha256 { get; set; } = "";
+    }
+
+    /// <summary>ASTC (Aerofly mobile) fixtures: decode must be byte-exact against the reference decoder.</summary>
+    private static void CheckAstc()
+    {
+        string dir = Path.Combine(Path.GetDirectoryName(_vectors)!, "vectors", "astc");
+        if (!Directory.Exists(dir)) dir = Path.Combine(_vectors, "astc");
+        string manifestPath = Path.Combine(dir, "astc_manifest.json");
+        if (!File.Exists(manifestPath)) return;
+
+        var refs = JsonSerializer.Deserialize<List<AstcRef>>(File.ReadAllText(manifestPath), JsonOpts) ?? [];
+        foreach (AstcRef r in refs)
+        {
+            string path = Path.Combine(dir, r.File);
+            if (!File.Exists(path) || new FileInfo(path).Length != r.Bytes) continue;
+            try
+            {
+                DecodedTexture tex = TtxFile.Decode(File.ReadAllBytes(path), flip: false);
+                if (tex.Width != r.Width || tex.Height != r.Height)
+                    Fail($"{r.File}: size {tex.Width}x{tex.Height} != {r.Width}x{r.Height}");
+                else if (Sha(tex.Rgba) != r.RgbaSha256)
+                    Fail($"{r.File} ({r.Format}): rgba hash mismatch");
+                else Pass($"{r.File} ({r.Format})");
+            }
+            catch (Exception ex) { Fail($"{r.File}: {ex.Message}"); }
+        }
+    }
     private sealed class TtcRef
     {
         public string File { get; set; } = "";
@@ -455,6 +493,9 @@ internal static class Program
         return mse <= 0 ? 99.0 : 10.0 * Math.Log10(255.0 * 255.0 / mse);
     }
 }
+
+
+
 
 
 
