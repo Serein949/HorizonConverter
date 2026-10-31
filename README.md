@@ -187,3 +187,24 @@ Exception code: 0xc0000005
 4. 只用命令行版（`dist\cli\AeroflyConv.exe`）批处理，它不开窗口，更不容易被 OSD 碰到。
 
 程序启动时如果检测到该 DLL 已注入，会在日志里给出红色警告并弹窗提示。
+
+---
+
+## 9. 常见问题：`Access to the path ... is denied`
+
+转换结果默认写在源文件旁边。游戏安装目录（`...\SteamLibrary\steamapps\common\Aerofly FS 4 ...`）
+一般不允许普通用户写入，所以会报权限错误。三种解决办法：
+
+1. **GUI**：`Options → Output` 选一个可写目录（可写目录里的文件夹结构会按输入镜像），
+   右侧 `?` 恢复"写在源文件旁边"。
+2. **CLI**：`-d/--outdir`
+
+   ```powershell
+   AeroflyConv "E:\SteamLibrary\steamapps\common\Aerofly FS 4 Flight Simulator\aircraft\a350_1000" -d D:\AeroflyPNG -j 16
+   ```
+
+3. **什么都不做**：程序会自动改写到 `Documents\AeroflyConv-out`（若也不可写则依次尝试
+   `%LOCALAPPDATA%\AeroflyConv\out`、临时目录、exe 同目录 `out\`），日志里会注明实际位置。
+
+另外 "auto" 模式在扫描文件夹时只处理已知的输入扩展名（`.ttx .tsb .wav .mp3 .flac .ogg .ttc
+.toc .tsc .wad .tmb .tsl .zip .tme` 和图片），不会再对 `.json`、`.cfg` 之类的文件报"无法识别"。

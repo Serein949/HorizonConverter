@@ -24,6 +24,9 @@ internal sealed class MainForm : Form
     private readonly GlassButton _clearButton = new() { Text = "Clear", Width = 86 };
     private readonly GlassButton _convertButton = new() { Text = "Convert", Primary = true, Width = 130 };
     private readonly GlassButton _openFolderButton = new() { Text = "Open output folder", Width = 168 };
+    private readonly GlassButton _outDirButton = new() { Text = "Same folder as source", Width = 330 };
+    private readonly GlassButton _outDirResetButton = new() { Text = "\u2715", Width = 40 };
+    private string? _outputDirectory;
     private readonly GlowProgressBar _progress = new();
     private readonly RichTextBox _log = new();
     private readonly Label _hintLabel = new();
@@ -240,7 +243,7 @@ internal sealed class MainForm : Form
         content.Controls.Add(header, 0, 0);
 
         // ---- options
-        var options = new GlassCard { Dock = DockStyle.Fill, Title = "Options", Height = 128, Margin = new Padding(0, 0, 0, 12) };
+        var options = new GlassCard { Dock = DockStyle.Fill, Title = "Options", Height = 172, Margin = new Padding(0, 0, 0, 12) };
         var optionsHost = new Panel { Dock = DockStyle.Fill, BackColor = Theme.CardTop };
 
         var row1 = new FlowLayoutPanel
@@ -301,6 +304,40 @@ internal sealed class MainForm : Form
         row2.Controls.Add(_mipmapsCheck);
         row2.Controls.Add(_compressCheck);
 
+        var row3 = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 40,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Theme.CardTop,
+            Padding = new Padding(0, 8, 0, 0),
+        };
+        var outLabel = new Label
+        {
+            Text = "Output",
+            ForeColor = Theme.TextMuted,
+            AutoSize = true,
+            Margin = new Padding(0, 12, 8, 0),
+            BackColor = Color.Transparent,
+        };
+        _outDirButton.Height = 30;
+        _outDirButton.Margin = new Padding(0, 3, 6, 0);
+        _outDirButton.Font = Theme.FontSmall;
+        _outDirResetButton.Height = 30;
+        _outDirResetButton.Margin = new Padding(0, 3, 0, 0);
+        _outDirResetButton.Font = Theme.FontSmall;
+        _outDirButton.Click += (_, _) => ChooseOutputDirectory();
+        _outDirResetButton.Click += (_, _) =>
+        {
+            _outputDirectory = null;
+            _outDirButton.Text = "Same folder as source";
+        };
+        row3.Controls.Add(outLabel);
+        row3.Controls.Add(_outDirButton);
+        row3.Controls.Add(_outDirResetButton);
+
+        optionsHost.Controls.Add(row3);
         optionsHost.Controls.Add(row2);
         optionsHost.Controls.Add(row1);
         options.Controls.Add(optionsHost);
@@ -546,6 +583,19 @@ internal sealed class MainForm : Form
         _ => "dxt1",
     };
 
+    private void ChooseOutputDirectory()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "选择输出目录（转换结果会镜像源文件夹结构）",
+            UseDescriptionForTitle = true,
+            ShowNewFolderButton = true,
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        _outputDirectory = dialog.SelectedPath;
+        _outDirButton.Text = dialog.SelectedPath;
+    }
+
     private void BrowseFiles()
     {
         ConversionMode mode = CurrentMode;
@@ -625,6 +675,7 @@ internal sealed class MainForm : Form
             TtcMipmaps = _mipmapsCheck.Checked,
             CompressTtx = _compressCheck.Checked,
             MaxParallelism = SelectedThreads,
+            OutputDirectory = _outputDirectory,
         };
 
         var files = _fileList.Items.Cast<string>().ToList();
@@ -725,6 +776,7 @@ internal sealed class MainForm : Form
         base.OnFormClosed(e);
     }
 }
+
 
 
 

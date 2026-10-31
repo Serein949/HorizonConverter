@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using AeroflyConv.Core.Media;
 using AeroflyConv.Core.Textures;
 using AeroflyConv.Core.Tm;
@@ -47,6 +47,15 @@ public sealed class ConvertOptions
     /// <summary>PNG output speed/size trade-off.</summary>
     public PngQuality PngQuality { get; set; } = PngQuality.Fast;
 
+    /// <summary>
+    /// Where to write outputs. Null = next to each source file (original behaviour).
+    /// When set, the input folder structure is mirrored below this directory.
+    /// </summary>
+    public string? OutputDirectory { get; set; }
+
+    /// <summary>Set by <see cref="Converter.ConvertAll"/> so folder conversions mirror their layout.</summary>
+    public string? MirrorRoot { get; set; }
+
     public ConvertOptions Clone() => (ConvertOptions)MemberwiseClone();
 }
 
@@ -79,6 +88,14 @@ public static class Converter
         _ => [],
     };
 
+    /// <summary>Every extension any mode accepts (used when the mode is "auto").</summary>
+    public static string[] AllInputExtensions { get; } =
+        Enum.GetValues<ConversionMode>()
+            .Where(m => m != ConversionMode.Auto)
+            .SelectMany(InputExtensions)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
     public static ConversionMode DetectMode(string path)
     {
         string ext = Path.GetExtension(path).ToLowerInvariant();
@@ -97,25 +114,53 @@ public static class Converter
         };
     }
 
-    public static string DefaultOutputPath(string input, ConversionMode mode)
+    /// <summary>File extension produced by a mode (TM dumps keep the source extension).</summary>
+    public static string OutputExtension(string input, ConversionMode mode) => mode switch
     {
-        string dir = Path.GetDirectoryName(input) ?? ".";
-        string name = Path.GetFileNameWithoutExtension(input);
-        string ext = mode switch
+        ConversionMode.TtxToPng => ".png",
+        ConversionMode.PngToTtx => ".ttx",
+        ConversionMode.TsbToWav => ".wav",
+        ConversionMode.WavToTsb => ".tsb",
+        ConversionMode.AudioToWav => ".wav",
+        ConversionMode.TmToTxt => Path.GetExtension(input) + ".txt",
+        ConversionMode.TtcToPng => ".png",
+        ConversionMode.PngToTtc => ".ttc",
+        ConversionMode.ZipToTme => ".tme",
+        ConversionMode.TmeToZip => ".zip",
+        _ => ".out",
+    };
+
+    public static string DefaultOutputPath(string input, ConversionMode mode) =>
+        ResolveOutputPath(input, mode, new ConvertOptions());
+
+    /// <summary>
+    /// Resolves the output path: next to the source, or below <paramref name="root"/> while mirroring
+    /// the input folder layout (so converting a whole tree keeps it organised).
+    /// </summary>
+    public static string ResolveOutputPath(string input, ConversionMode mode, ConvertOptions options, string? root = null)
+    {
+        string name = Path.GetFileNameWithoutExtension(input) + OutputExtension(input, mode);
+        string? outputRoot = root ?? options.OutputDirectory;
+        if (outputRoot is null)
+            return Path.Combine(Path.GetDirectoryName(input) ?? ".", name);
+
+        string relative = "";
+        if (!string.IsNullOrEmpty(options.MirrorRoot))
         {
-            ConversionMode.TtxToPng => ".png",
-            ConversionMode.PngToTtx => ".ttx",
-            ConversionMode.TsbToWav => ".wav",
-            ConversionMode.WavToTsb => ".tsb",
-            ConversionMode.AudioToWav => ".wav",
-            ConversionMode.TmToTxt => Path.GetExtension(input) + ".txt",
-            ConversionMode.TtcToPng => ".png",
-            ConversionMode.PngToTtc => ".ttc",
-            ConversionMode.ZipToTme => ".tme",
-            ConversionMode.TmeToZip => ".zip",
-            _ => ".out",
-        };
-        return Path.Combine(dir, name + ext);
+            string dir = Path.GetDirectoryName(input) ?? "";
+            relative = Path.GetRelativePath(options.MirrorRoot!, dir);
+            if (relative == "." || relative.StartsWith("..", StringComparison.Ordinal))
+                relative = "";
+        }
+        return Path.Combine(outputRoot, relative, name);
+    }
+
+    /// <summary>Creates the output directory and fails early with a clear message when it is read-only.</summary>
+    private static void EnsureOutputDirectory(string outputPath)
+    {
+        string? dir = Path.GetDirectoryName(outputPath);
+        if (string.IsNullOrEmpty(dir)) return;
+        Directory.CreateDirectory(dir);
     }
 
     /// <summary>Expands folders recursively into files matching the mode's input extensions.</summary>
@@ -126,7 +171,7 @@ public static class Converter
         {
             if (Directory.Exists(input))
             {
-                string[] exts = InputExtensions(mode);
+                string[] exts = mode == ConversionMode.Auto ? AllInputExtensions : InputExtensions(mode);
                 var options = new EnumerationOptions
                 {
                     RecurseSubdirectories = recursive,
@@ -152,52 +197,121 @@ public static class Converter
         ConvertOptions options, Action<string>? log = null)
     {
         var sw = Stopwatch.StartNew();
+        if (mode == ConversionMode.Auto) mode = DetectMode(input);
+
+        bool explicitOutput = output is not null;
+        output ??= ResolveOutputPath(input, mode, options);
+
         try
         {
-            if (mode == ConversionMode.Auto) mode = DetectMode(input);
-            output ??= DefaultOutputPath(input, mode);
-
-            if (!options.Overwrite && File.Exists(output) &&
-                !string.Equals(Path.GetFullPath(input), Path.GetFullPath(output), StringComparison.OrdinalIgnoreCase))
+            return Run(input, output, mode, options, log, sw);
+        }
+        catch (Exception ex) when (!explicitOutput && IsPermissionProblem(ex))
+        {
+            // Source folders under Program Files / SteamLibrary are often not writable - fall back
+            // to the first writable output root so a batch never dies just because of where it reads.
+            string? lastError = null;
+            foreach (string root in FallbackRoots())
             {
-                return new ConversionOutcome
+                string fallback = ResolveOutputPath(input, mode, options, root);
+                try
                 {
-                    Input = input, Output = output, Mode = mode, Ok = true,
-                    Summary = "skipped (exists)", Milliseconds = 0,
-                };
+                    ConversionOutcome outcome = Run(input, fallback, mode, options, log, sw);
+                    return new ConversionOutcome
+                    {
+                        Input = outcome.Input,
+                        Output = outcome.Output,
+                        Mode = outcome.Mode,
+                        Ok = true,
+                        Summary = outcome.Summary + $"  [源目录不可写，已输出到 {root}]",
+                        Milliseconds = outcome.Milliseconds,
+                    };
+                }
+                catch (Exception inner)
+                {
+                    lastError = DescribeWriteError(inner, fallback);
+                }
             }
-
-            string summary = mode switch
-            {
-                ConversionMode.TtxToPng => TtxToPng(input, output, options, log),
-                ConversionMode.PngToTtx => PngToTtx(input, output, options, log),
-                ConversionMode.TsbToWav => TsbToWav(input, output, log),
-                ConversionMode.WavToTsb => WavToTsb(input, output, log),
-                ConversionMode.AudioToWav => AudioToWav(input, output, log),
-                ConversionMode.TmToTxt => TmToTxt(input, output, log),
-                ConversionMode.TtcToPng => TtcToPng(input, output, options, log),
-                ConversionMode.PngToTtc => PngToTtc(input, output, options, log),
-                ConversionMode.ZipToTme => ZipToTme(input, output),
-                ConversionMode.TmeToZip => TmeToZip(input, output),
-                _ => throw new AeroflyFormatException($"cannot detect a conversion for {Path.GetFileName(input)}"),
-            };
-
-            sw.Stop();
-            return new ConversionOutcome
-            {
-                Input = input, Output = output, Mode = mode, Ok = true,
-                Summary = summary, Milliseconds = sw.Elapsed.TotalMilliseconds,
-            };
+            return Failure(input, mode,
+                (lastError ?? ex.Message) + "  [could not find a writable output folder]", sw);
         }
         catch (Exception ex)
         {
-            sw.Stop();
+            return Failure(input, mode, DescribeWriteError(ex, output), sw);
+        }
+    }
+
+    private static ConversionOutcome Run(string input, string output, ConversionMode mode,
+        ConvertOptions options, Action<string>? log, Stopwatch sw)
+    {
+        if (!options.Overwrite && File.Exists(output) &&
+            !string.Equals(Path.GetFullPath(input), Path.GetFullPath(output), StringComparison.OrdinalIgnoreCase))
+        {
             return new ConversionOutcome
             {
-                Input = input, Output = null, Mode = mode, Ok = false,
-                Error = ex.Message, Milliseconds = sw.Elapsed.TotalMilliseconds,
+                Input = input, Output = output, Mode = mode, Ok = true,
+                Summary = "skipped (exists)", Milliseconds = 0,
             };
         }
+
+        EnsureOutputDirectory(output);
+
+        string summary = mode switch
+        {
+            ConversionMode.TtxToPng => TtxToPng(input, output, options, log),
+            ConversionMode.PngToTtx => PngToTtx(input, output, options, log),
+            ConversionMode.TsbToWav => TsbToWav(input, output, log),
+            ConversionMode.WavToTsb => WavToTsb(input, output, log),
+            ConversionMode.AudioToWav => AudioToWav(input, output, log),
+            ConversionMode.TmToTxt => TmToTxt(input, output, log),
+            ConversionMode.TtcToPng => TtcToPng(input, output, options, log),
+            ConversionMode.PngToTtc => PngToTtc(input, output, options, log),
+            ConversionMode.ZipToTme => ZipToTme(input, output),
+            ConversionMode.TmeToZip => TmeToZip(input, output),
+            _ => throw new AeroflyFormatException($"cannot detect a conversion for {Path.GetFileName(input)}"),
+        };
+
+        sw.Stop();
+        return new ConversionOutcome
+        {
+            Input = input, Output = output, Mode = mode, Ok = true,
+            Summary = summary, Milliseconds = sw.Elapsed.TotalMilliseconds,
+        };
+    }
+
+    private static ConversionOutcome Failure(string input, ConversionMode mode, string error, Stopwatch sw)
+    {
+        sw.Stop();
+        return new ConversionOutcome
+        {
+            Input = input, Output = null, Mode = mode, Ok = false,
+            Error = error, Milliseconds = sw.Elapsed.TotalMilliseconds,
+        };
+    }
+
+    /// <summary>Writable output locations tried when the source folder refuses writes.</summary>
+    private static IEnumerable<string> FallbackRoots()
+    {
+        string exeDir = AppContext.BaseDirectory;
+        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AeroflyConv-out");
+        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AeroflyConv", "out");
+        yield return Path.Combine(Path.GetTempPath(), "AeroflyConv-out");
+        if (!string.IsNullOrEmpty(exeDir)) yield return Path.Combine(exeDir, "out");
+    }
+
+    private static bool IsPermissionProblem(Exception ex) =>
+        ex is UnauthorizedAccessException ||
+        (ex is IOException && ex.Message.Contains("denied", StringComparison.OrdinalIgnoreCase));
+
+    private static string DescribeWriteError(Exception ex, string? output)
+    {
+        if (IsPermissionProblem(ex) && output is not null)
+        {
+            return $"cannot write '{output}': permission denied. " +
+                   "Choose another output folder (CLI: -d/--outdir, GUI: \u201cOutput \u2192 Choose\u2026\u201d) " +
+                   "or run the app as administrator.";
+        }
+        return ex.Message;
     }
 
     /// <summary>Converts many files, optionally in parallel, reporting each outcome as it finishes.</summary>
@@ -208,6 +322,9 @@ public static class Converter
         var results = new List<ConversionOutcome>(files.Count);
         object gate = new();
         int parallelism = Math.Clamp(options.MaxParallelism, 1, 64);
+
+        // mirror the folder layout when writing into a dedicated output directory
+        options.MirrorRoot = options.OutputDirectory is null ? null : CommonRoot(files);
 
         var parallelOptions = new ParallelOptions
         {
@@ -228,6 +345,30 @@ public static class Converter
 
         results.Sort((a, b) => string.CompareOrdinal(a.Input, b.Input));
         return results;
+    }
+
+    /// <summary>Deepest directory that contains every input file (used to mirror folder layouts).</summary>
+    private static string? CommonRoot(IReadOnlyList<string> files)
+    {
+        if (files.Count == 0) return null;
+        string[] first = (Path.GetDirectoryName(Path.GetFullPath(files[0])) ?? "").Split(Path.DirectorySeparatorChar);
+        int common = first.Length;
+        for (int i = 1; i < files.Count; i++)
+        {
+            string[] parts = (Path.GetDirectoryName(Path.GetFullPath(files[i])) ?? "").Split(Path.DirectorySeparatorChar);
+            common = Math.Min(common, parts.Length);
+            for (int j = 0; j < common; j++)
+            {
+                if (!string.Equals(first[j], parts[j], StringComparison.OrdinalIgnoreCase))
+                {
+                    common = j;
+                    break;
+                }
+            }
+        }
+        if (common == 0) return null;
+        string root = string.Join(Path.DirectorySeparatorChar, first.Take(common));
+        return root.Length == 0 ? Path.DirectorySeparatorChar.ToString() : root;
     }
 
     // ------------------------------------------------------------------ modes
@@ -362,3 +503,8 @@ public static class Converter
         }
     }
 }
+
+
+
+
+

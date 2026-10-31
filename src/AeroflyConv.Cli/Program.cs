@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using AeroflyConv.Core;
 using AeroflyConv.Core.Conversion;
@@ -37,6 +37,10 @@ internal static class Program
                 case "-o":
                 case "--output":
                     output = RequireArg(args, ref i, arg);
+                    break;
+                case "-d":
+                case "--outdir":
+                    options.OutputDirectory = Path.GetFullPath(RequireArg(args, ref i, arg));
                     break;
                 case "-f":
                 case "--format":
@@ -237,6 +241,9 @@ internal static class Program
               -m, --mode <name>       auto|ttx2png|png2ttx|tsb2wav|wav2tsb|audio2wav|
                                       tm2txt|ttc2png|png2ttc|zip2tme|tme2zip
               -o, --output <path>     output path (single input only)
+              -d, --outdir <dir>      write outputs below this folder (mirrors input folders).
+                                      Needed when the source folder is read-only, e.g. inside the
+                                      SteamLibrary game directory.
               -f, --format <fmt>      TTX target format (default dxt_auto):
                                       dxt_auto, dxt1, dxt5, type_rgba, type_r,
                                       etc2, type_rgba_etc2
@@ -255,6 +262,8 @@ internal static class Program
               AeroflyConv "C:\Aerofly FS 4\aircraft" -m ttx2png -j 8
               AeroflyConv livery.png -m png2ttx -f dxt_auto --flip
               AeroflyConv scenery.tmb -m tm2txt
+              AeroflyConv "E:\SteamLibrary\...\aircraft" -d D:\extracted -j 16
             """);
     }
 }
+
