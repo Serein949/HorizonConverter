@@ -1,0 +1,260 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using AeroflyConv.Core;
+using AeroflyConv.Core.Conversion;
+using AeroflyConv.Core.Media;
+
+namespace AeroflyConv.Cli;
+
+internal static class Program
+{
+    private static int Main(string[] args)
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+        if (args.Length == 0 || args.Any(a => a is "-h" or "--help" or "help"))
+        {
+            PrintHelp();
+            return args.Length == 0 ? 2 : 0;
+        }
+
+        ConversionMode mode = ConversionMode.Auto;
+        string? output = null;
+        var options = new ConvertOptions();
+        var paths = new List<string>();
+        bool info = false;
+        bool flipSet = false;
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            string arg = args[i];
+            switch (arg)
+            {
+                case "-m":
+                case "--mode":
+                    mode = ParseMode(RequireArg(args, ref i, arg));
+                    break;
+                case "-o":
+                case "--output":
+                    output = RequireArg(args, ref i, arg);
+                    break;
+                case "-f":
+                case "--format":
+                    options.TtxFormat = RequireArg(args, ref i, arg);
+                    break;
+                case "--ttc-format":
+                    options.TtcFormat = RequireArg(args, ref i, arg);
+                    break;
+                case "-j":
+                case "--jobs":
+                    options.MaxParallelism = int.Parse(RequireArg(args, ref i, arg));
+                    break;
+                case "--flip":
+                    options.Flip = true;
+                    flipSet = true;
+                    break;
+                case "--no-flip":
+                    options.Flip = false;
+                    flipSet = true;
+                    break;
+                case "--no-mipmaps":
+                    options.TtcMipmaps = false;
+                    break;
+                case "--no-compress":
+                    options.CompressTtx = false;
+                    break;
+                case "--png-quality":
+                    options.PngQuality = RequireArg(args, ref i, arg).ToLowerInvariant() switch
+                    {
+                        "fast" => PngQuality.Fast,
+                        "balanced" => PngQuality.Balanced,
+                        "best" => PngQuality.Best,
+                        _ => throw new ArgumentException("--png-quality must be fast, balanced or best"),
+                    };
+                    break;
+                case "--info":
+                    info = true;
+                    break;
+                case "--no-overwrite":
+                    options.Overwrite = false;
+                    break;
+                case "--zoom":
+                    options.TtcZoom = int.Parse(RequireArg(args, ref i, arg));
+                    break;
+                default:
+                    if (arg.StartsWith('-'))
+                    {
+                        Console.Error.WriteLine($"unknown option: {arg}");
+                        return 2;
+                    }
+                    paths.Add(arg);
+                    break;
+            }
+        }
+
+        if (paths.Count == 0)
+        {
+            PrintHelp();
+            return 2;
+        }
+
+        if (!flipSet)
+            options.Flip = mode is ConversionMode.TtcToPng or ConversionMode.PngToTtc;
+
+        if (info)
+            return RunInfo(paths);
+
+        List<string> files = Converter.Expand(paths, mode);
+        if (files.Count == 0)
+        {
+            Console.Error.WriteLine("No matching files found.");
+            return 1;
+        }
+        if (files.Count > 1 && output is not null)
+        {
+            Console.Error.WriteLine("-o/--output only works with a single input file; ignoring it.");
+            output = null;
+        }
+
+        var total = Stopwatch.StartNew();
+        int failures = 0;
+        long bytes = 0;
+        int done = 0;
+        var gate = new object();
+
+        void Report(ConversionOutcome outcome)
+        {
+            lock (gate)
+            {
+                done++;
+                string label = Path.GetFileName(outcome.Input);
+                if (outcome.Ok)
+                {
+                    bytes += SafeLength(outcome.Output);
+                    Console.WriteLine(
+                        $"[{done}/{files.Count}] {label} -> {Path.GetFileName(outcome.Output)}  " +
+                        $"{outcome.Summary}  ({outcome.Milliseconds:0} ms)");
+                }
+                else
+                {
+                    failures++;
+                    Console.Error.WriteLine($"[{done}/{files.Count}] {label}  ERROR: {outcome.Error}");
+                }
+            }
+        }
+
+        if (files.Count == 1 && output is not null)
+        {
+            Report(Converter.ConvertFile(files[0], output, mode, options));
+        }
+        else
+        {
+            Converter.ConvertAll(files, mode, options, progress: Report, log: null);
+        }
+
+        total.Stop();
+        double seconds = Math.Max(total.Elapsed.TotalSeconds, 0.0001);
+        Console.WriteLine();
+        Console.WriteLine($"{files.Count - failures}/{files.Count} converted in {seconds:0.00} s " +
+                          $"({files.Count / seconds:0.0} files/s, {bytes / 1048576.0 / seconds:0.0} MB/s output)");
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static long SafeLength(string? path)
+    {
+        try { return path is not null && File.Exists(path) ? new FileInfo(path).Length : 0; }
+        catch (IOException) { return 0; }
+    }
+
+    private static int RunInfo(List<string> paths)
+    {
+        List<string> files = Converter.Expand(paths, ConversionMode.Auto);
+        if (files.Count == 0)
+        {
+            Console.Error.WriteLine("No matching files found.");
+            return 1;
+        }
+        int failures = 0;
+        foreach (string file in files)
+        {
+            try
+            {
+                Console.WriteLine($"{file}");
+                Console.WriteLine($"    {Converter.Describe(file)}");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.Error.WriteLine($"    ERROR: {ex.Message}");
+            }
+        }
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static string RequireArg(string[] args, ref int i, string option)
+    {
+        if (i + 1 >= args.Length)
+            throw new ArgumentException($"{option} needs a value");
+        return args[++i];
+    }
+
+    private static ConversionMode ParseMode(string value) => value.ToLowerInvariant() switch
+    {
+        "auto" => ConversionMode.Auto,
+        "ttx2png" or "ttx" or "decode" => ConversionMode.TtxToPng,
+        "png2ttx" or "ttxencode" or "encode" => ConversionMode.PngToTtx,
+        "tsb2wav" or "tsb" => ConversionMode.TsbToWav,
+        "wav2tsb" => ConversionMode.WavToTsb,
+        "audio2wav" or "audio" or "mp3" => ConversionMode.AudioToWav,
+        "tm2txt" or "toc" or "txt" => ConversionMode.TmToTxt,
+        "ttc2png" or "ttc" => ConversionMode.TtcToPng,
+        "png2ttc" or "ttcencode" => ConversionMode.PngToTtc,
+        "zip2tme" => ConversionMode.ZipToTme,
+        "tme2zip" => ConversionMode.TmeToZip,
+        _ => throw new ArgumentException($"unknown mode: {value}"),
+    };
+
+    private static void PrintHelp()
+    {
+        Console.WriteLine("""
+            AeroflyConv - fast Aerofly FS TTX / TSB / TOC / TTC converter (C#)
+
+            Usage:
+              AeroflyConv <file-or-folder> [more paths...] [options]
+
+            The mode is detected from the file extension unless -m is given:
+              .ttx                      -> PNG
+              .png .jpg .bmp            -> TTX (texture)
+              .ttc                      -> PNG (scenery tile)
+              .tsb                      -> WAV
+              .wav                      -> TSB
+              .mp3 .flac .ogg           -> WAV
+              .toc .tsc .wad .tmb .tsl  -> TXT (generic TM dump)
+              .zip                      -> TME
+              .tme                      -> ZIP
+
+            Options:
+              -m, --mode <name>       auto|ttx2png|png2ttx|tsb2wav|wav2tsb|audio2wav|
+                                      tm2txt|ttc2png|png2ttc|zip2tme|tme2zip
+              -o, --output <path>     output path (single input only)
+              -f, --format <fmt>      TTX target format (default dxt_auto):
+                                      dxt_auto, dxt1, dxt5, type_rgba, type_r,
+                                      etc2, type_rgba_etc2
+                  --ttc-format <f>    TTC target format: dxt1 (default), dxt5, etc2, r8
+                  --flip/--no-flip    flip textures vertically (default: only TTC modes)
+                  --no-mipmaps        TTC: write the top mip only
+                  --no-compress       TTX: write an uncompressed container
+                  --png-quality <q>   fast (default) | balanced | best
+                  --zoom <n>          TTC header "extra"/zoom (default: from map_N_ name)
+                  --no-overwrite      skip files that already exist
+                  --info              only print metadata
+              -j, --jobs <n>          parallel workers (default: CPU count)
+              -h, --help              this help
+
+            Examples:
+              AeroflyConv "C:\Aerofly FS 4\aircraft" -m ttx2png -j 8
+              AeroflyConv livery.png -m png2ttx -f dxt_auto --flip
+              AeroflyConv scenery.tmb -m tm2txt
+            """);
+    }
+}

@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AeroflyConv.Cli/AeroflyConv.Cli.csproj" />
+    <Project Path="src/AeroflyConv.Core/AeroflyConv.Core.csproj" />
+    <Project Path="src/AeroflyConv.Gui/AeroflyConv.Gui.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/CodecCheck/CodecCheck.csproj" />
+    <Project Path="tools/LzhamCheck/LzhamCheck.csproj" />
+    <Project Path="tools/Verify/Verify.csproj" />
+  </Folder>
+</Solution>

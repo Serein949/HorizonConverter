@@ -1,0 +1,687 @@
+﻿using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+using AeroflyConv.Core;
+using AeroflyConv.Core.Conversion;
+using AeroflyConv.Core.Media;
+using AeroflyConv.Gui.Ui;
+
+namespace AeroflyConv.Gui;
+
+internal sealed class MainForm : Form
+{
+    private static readonly int[] ThreadChoices = [0, 1, 2, 4, 8, 16, 32];
+
+    private readonly NavList _nav = new();
+    private readonly GlassSelect _formatSelect = new();
+    private readonly GlassSelect _threadsSelect = new();
+    private readonly CheckBox _flipCheck = new();
+    private readonly CheckBox _mipmapsCheck = new();
+    private readonly CheckBox _compressCheck = new();
+    private readonly GlassListBox _fileList = new();
+    private readonly GlassButton _browseButton = new() { Text = "Add files", Width = 112 };
+    private readonly GlassButton _clearButton = new() { Text = "Clear", Width = 86 };
+    private readonly GlassButton _convertButton = new() { Text = "Convert", Primary = true, Width = 130 };
+    private readonly GlassButton _openFolderButton = new() { Text = "Open output folder", Width = 168 };
+    private readonly GlowProgressBar _progress = new();
+    private readonly RichTextBox _log = new();
+    private readonly Label _hintLabel = new();
+    private readonly Label _statusLabel = new();
+    private readonly Label _formatLabel = new();
+    private readonly Label _pageTitle = new();
+    private readonly Label _pageHint = new();
+    private GlassCard? _filesCard;
+    private string? _lastOutputFolder;
+    private CancellationTokenSource? _cts;
+    private bool _busy;
+    private bool _flipRelevant;
+    private bool _mipmapsRelevant;
+    private bool _compressRelevant;
+
+    private static readonly (string Category, NavEntry[] Items)[] Modes =
+    [
+        ("Textures", [
+            new NavEntry { Text = "TTX \u2192 PNG", Mode = ConversionMode.TtxToPng },
+            new NavEntry { Text = "PNG \u2192 TTX", Mode = ConversionMode.PngToTtx },
+        ]),
+        ("Audio", [
+            new NavEntry { Text = "TSB \u2192 WAV", Mode = ConversionMode.TsbToWav },
+            new NavEntry { Text = "WAV \u2192 TSB", Mode = ConversionMode.WavToTsb },
+            new NavEntry { Text = "MP3 / FLAC / OGG \u2192 WAV", Mode = ConversionMode.AudioToWav },
+        ]),
+        ("Scenery", [
+            new NavEntry { Text = "TTC \u2192 PNG", Mode = ConversionMode.TtcToPng },
+            new NavEntry { Text = "PNG \u2192 TTC", Mode = ConversionMode.PngToTtc },
+            new NavEntry { Text = "Compressed \u2192 TXT", Mode = ConversionMode.TmToTxt },
+        ]),
+        ("Packages", [
+            new NavEntry { Text = "ZIP \u2192 TME", Mode = ConversionMode.ZipToTme },
+            new NavEntry { Text = "TME \u2192 ZIP", Mode = ConversionMode.TmeToZip },
+        ]),
+    ];
+
+    public MainForm()
+    {
+        Text = "Aerofly Converter";
+        MinimumSize = new Size(1080, 720);
+        Size = new Size(1260, 820);
+        BackColor = Theme.BaseTop;
+        ForeColor = Theme.Text;
+        Font = Theme.FontBody;
+        AllowDrop = true;
+        StartPosition = FormStartPosition.CenterScreen;
+        DoubleBuffered = true;
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
+        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
+        catch (IOException) { }
+        catch (ArgumentException) { }
+
+        BuildLayout();
+        BuildNav();
+        UpdateModeUi();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Theme.EnableModernWindow(Handle);
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        Theme.EnableModernWindow(Handle);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e) => Theme.PaintBackdrop(e.Graphics, ClientRectangle);
+
+    // ------------------------------------------------------------------ layout
+
+    private void BuildLayout()
+    {
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = Color.Transparent,
+        };
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 268));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        Controls.Add(root);
+
+        root.Controls.Add(BuildSidebar(), 0, 0);
+        root.Controls.Add(BuildContent(), 1, 0);
+    }
+
+    private Control BuildSidebar()
+    {
+        var sidebar = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
+        sidebar.Paint += (_, e) =>
+        {
+            Graphics g = e.Graphics;
+            using (var brush = new SolidBrush(Color.FromArgb(226, Theme.Sidebar)))
+                g.FillRectangle(brush, sidebar.ClientRectangle);
+            using var line = new Pen(Color.FromArgb(22, 255, 255, 255), 1f);
+            g.DrawLine(line, sidebar.Width - 1, 0, sidebar.Width - 1, sidebar.Height);
+        };
+
+        sidebar.Controls.Add(new BrandHeader { Dock = DockStyle.Top, Height = 104 });
+
+        var navHost = new Panel
+        {
+            Dock = DockStyle.Top,
+            BackColor = Color.FromArgb(255, Theme.Sidebar),
+            Padding = new Padding(8, 0, 8, 0),
+        };
+        _nav.Dock = DockStyle.Top;
+        _nav.SelectionChanged += (_, _) => UpdateModeUi();
+        navHost.Controls.Add(_nav);
+        sidebar.Controls.Add(navHost);
+        _navHost = navHost;
+
+        var footer = new Label
+        {
+            Dock = DockStyle.Bottom,
+            Height = 56,
+            Text = "C# / .NET 10  \u00b7  managed LZHAM\nno Python, no runtime install",
+            Font = Theme.FontSmall,
+            ForeColor = Theme.TextDim,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(24, 0, 12, 8),
+            BackColor = Color.Transparent,
+        };
+        sidebar.Controls.Add(footer);
+
+        return sidebar;
+    }
+
+    private Panel? _navHost;
+
+    private Control BuildContent()
+    {
+        var content = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 6,
+            BackColor = Color.Transparent,
+            Padding = new Padding(26, 18, 26, 18),
+        };
+        content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        content.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
+        content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        content.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
+
+        // ---- header
+        var header = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 12), Height = 58 };
+        _pageTitle.Text = "TTX \u2192 PNG";
+        _pageTitle.Font = new Font("Segoe UI Semibold", 16f);
+        _pageTitle.ForeColor = Theme.Text;
+        _pageTitle.AutoSize = true;
+        _pageTitle.Location = new Point(0, 0);
+        _pageTitle.BackColor = Color.Transparent;
+        _pageHint.Font = Theme.FontSmall;
+        _pageHint.ForeColor = Theme.TextMuted;
+        _pageHint.AutoSize = true;
+        _pageHint.Location = new Point(2, 31);
+        _pageHint.BackColor = Color.Transparent;
+        header.Controls.Add(_pageTitle);
+        header.Controls.Add(_pageHint);
+        content.Controls.Add(header, 0, 0);
+
+        // ---- options
+        var options = new GlassCard { Dock = DockStyle.Fill, Title = "Options", Height = 128, Margin = new Padding(0, 0, 0, 12) };
+        var optionsHost = new Panel { Dock = DockStyle.Fill, BackColor = Theme.CardTop };
+
+        var row1 = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 36,
+            AutoSize = false,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Theme.CardTop,
+            Padding = new Padding(0, 4, 0, 0),
+        };
+        var threadsLabel = new Label
+        {
+            Text = "Threads",
+            ForeColor = Theme.TextMuted,
+            AutoSize = true,
+            Margin = new Padding(0, 9, 8, 0),
+            BackColor = Color.Transparent,
+        };
+        _threadsSelect.Width = 130;
+        _threadsSelect.Height = 30;
+        _threadsSelect.Margin = new Padding(0, 2, 24, 0);
+        _threadsSelect.SetItems(ThreadChoices.Select(n => n == 0 ? $"Auto ({Environment.ProcessorCount})" : $"{n} threads"));
+
+        _formatLabel.Text = "Format";
+        _formatLabel.ForeColor = Theme.TextMuted;
+        _formatLabel.AutoSize = true;
+        _formatLabel.Margin = new Padding(0, 9, 8, 0);
+        _formatLabel.BackColor = Color.Transparent;
+
+        _formatSelect.Width = 350;
+        _formatSelect.Height = 30;
+        _formatSelect.Margin = new Padding(0, 2, 0, 0);
+
+        row1.Controls.Add(threadsLabel);
+        row1.Controls.Add(_threadsSelect);
+        row1.Controls.Add(_formatLabel);
+        row1.Controls.Add(_formatSelect);
+
+        var row2 = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 34,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Theme.CardTop,
+            Padding = new Padding(0, 10, 0, 0),
+        };
+        ConfigureCheck(_flipCheck, "Flip vertically (liveries)");
+        ConfigureCheck(_mipmapsCheck, "TTC mipmaps");
+        ConfigureCheck(_compressCheck, "Compress TTX (LZHAM)");
+        _mipmapsCheck.Checked = true;
+        _compressCheck.Checked = true;
+        _flipCheck.Margin = new Padding(0, 0, 26, 0);
+        _mipmapsCheck.Margin = new Padding(0, 0, 26, 0);
+        row2.Controls.Add(_flipCheck);
+        row2.Controls.Add(_mipmapsCheck);
+        row2.Controls.Add(_compressCheck);
+
+        optionsHost.Controls.Add(row2);
+        optionsHost.Controls.Add(row1);
+        options.Controls.Add(optionsHost);
+        content.Controls.Add(options, 0, 1);
+        // ---- files card
+        var filesCard = new GlassCard { Dock = DockStyle.Fill, Title = "Files", Margin = new Padding(0, 0, 0, 12) };
+        _filesCard = filesCard;
+        var listHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(19, 23, 29),
+            Padding = new Padding(6, 4, 6, 6),
+        };
+        _fileList.Dock = DockStyle.Fill;
+        _fileList.AllowDrop = true;
+        _fileList.DragEnter += OnDragEnter;
+        _fileList.DragDrop += OnDragDrop;
+        _fileList.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Delete) RemoveSelectedFiles();
+        };
+        _fileList.SelectedIndexChanged += (_, _) => UpdateFilesSubtitle();
+
+        _hintLabel.Dock = DockStyle.Fill;
+        _hintLabel.TextAlign = ContentAlignment.MiddleCenter;
+        _hintLabel.ForeColor = Theme.TextDim;
+        _hintLabel.Font = new Font("Segoe UI", 9.5f);
+        _hintLabel.BackColor = Color.FromArgb(19, 23, 29);
+        _hintLabel.Text = "Drag files or folders here";
+        listHost.Controls.Add(_fileList);
+        listHost.Controls.Add(_hintLabel);
+        _hintLabel.BringToFront();
+        filesCard.Controls.Add(listHost);
+        content.Controls.Add(filesCard, 0, 2);
+
+        // ---- buttons
+        var buttons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 0, 0, 10),
+            Padding = new Padding(0, 2, 0, 0),
+        };
+        _browseButton.Margin = new Padding(0, 0, 8, 0);
+        _clearButton.Margin = new Padding(0, 0, 8, 0);
+        _convertButton.Margin = new Padding(0, 0, 8, 0);
+        _openFolderButton.Margin = new Padding(0);
+        _browseButton.Click += (_, _) => BrowseFiles();
+        _clearButton.Click += (_, _) => { _fileList.Items.Clear(); UpdateHint(); UpdateFilesSubtitle(); };
+        _convertButton.Click += async (_, _) => await ConvertAsync();
+        _openFolderButton.Click += (_, _) => OpenOutputFolder();
+        _openFolderButton.Enabled = false;
+        buttons.Controls.Add(_browseButton);
+        buttons.Controls.Add(_clearButton);
+        buttons.Controls.Add(_convertButton);
+        buttons.Controls.Add(_openFolderButton);
+        content.Controls.Add(buttons, 0, 3);
+
+        // ---- progress
+        var progressRow = new Panel { Dock = DockStyle.Fill, Height = 32, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 8) };
+        _progress.Location = new Point(2, 10);
+        _progress.Width = 520;
+        _progress.Height = 10;
+        _progress.Maximum = 1;
+        _statusLabel.Text = "Ready";
+        _statusLabel.ForeColor = Theme.TextMuted;
+        _statusLabel.Font = Theme.FontSmall;
+        _statusLabel.AutoSize = true;
+        _statusLabel.Location = new Point(540, 6);
+        _statusLabel.BackColor = Color.Transparent;
+        progressRow.Controls.Add(_progress);
+        progressRow.Controls.Add(_statusLabel);
+        content.Controls.Add(progressRow, 0, 4);
+
+        // ---- log card
+        var logCard = new GlassCard { Dock = DockStyle.Fill, Title = "Log", Margin = new Padding(0) };
+        var logHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Theme.LogBack,
+            Padding = new Padding(8, 4, 8, 8),
+        };
+        _log.Dock = DockStyle.Fill;
+        _log.BackColor = Theme.LogBack;
+        _log.ForeColor = Color.FromArgb(176, 214, 190);
+        _log.BorderStyle = BorderStyle.None;
+        _log.ReadOnly = true;
+        _log.Font = Theme.FontMono;
+        _log.WordWrap = false;
+        _log.DetectUrls = false;
+        _log.ScrollBars = RichTextBoxScrollBars.Vertical;
+        logHost.Controls.Add(_log);
+        logCard.Controls.Add(logHost);
+        content.Controls.Add(logCard, 0, 5);
+
+        DragEnter += OnDragEnter;
+        DragDrop += OnDragDrop;
+        return content;
+    }
+
+    private void BuildNav()
+    {
+        var entries = new List<NavEntry>();
+        foreach (var (category, items) in Modes)
+        {
+            entries.Add(new NavEntry { Text = category, IsHeader = true });
+            entries.AddRange(items);
+        }
+        _nav.SetEntries(entries);
+        if (_navHost is not null) _navHost.Height = _nav.MeasureHeight();
+    }
+
+    private static void ConfigureCheck(CheckBox box, string text)
+    {
+        box.Text = text;
+        box.ForeColor = Theme.Text;
+        box.AutoSize = true;
+        box.FlatStyle = FlatStyle.Standard;
+        box.BackColor = Theme.CardTop;
+        box.ForeColor = Color.FromArgb(215, 223, 235);
+        box.Font = Theme.FontBody;
+        box.Cursor = Cursors.Hand;
+    }
+
+    // ------------------------------------------------------------------ behaviour
+
+    private ConversionMode CurrentMode => _nav.Selected?.Mode ?? ConversionMode.TtxToPng;
+
+    private int SelectedThreads
+    {
+        get
+        {
+            int index = Math.Clamp(_threadsSelect.SelectedIndex, 0, ThreadChoices.Length - 1);
+            int value = ThreadChoices[index];
+            return value == 0 ? Environment.ProcessorCount : value;
+        }
+    }
+
+    private void UpdateModeUi()
+    {
+        ConversionMode mode = CurrentMode;
+        _pageTitle.Text = _nav.Selected?.Text ?? "Convert";
+
+        (string hint, string pageHint) = mode switch
+        {
+            ConversionMode.TtxToPng => ("Drag && drop .ttx textures here\nor use \"Add files\"",
+                "DXT1/3/5, BC5 normal maps, ETC2, raw RGBA and R8 textures to PNG"),
+            ConversionMode.PngToTtx => ("Drag && drop PNG / JPG / TGA images here",
+                "Writes a shipping-style TTX with a full mip chain and LZHAM compress_file"),
+            ConversionMode.TsbToWav => ("Drag && drop .tsb sounds here", "Mono / stereo PCM containers to WAV"),
+            ConversionMode.WavToTsb => ("Drag && drop .wav files here", "Uncompressed PCM WAV to TSB"),
+            ConversionMode.AudioToWav => ("Drag && drop .mp3 / .flac / .ogg files here", "Decodes to 16-bit PCM WAV"),
+            ConversionMode.TmToTxt => ("Drag && drop .toc / .tsc / .wad / .tmb / .tsl files here",
+                "Inflates the TM container and writes the generic type / name / value text tree"),
+            ConversionMode.TtcToPng => ("Drag && drop .ttc scenery tiles here", "DXT1 / DXT5 / ETC2 / R8 tiles to PNG"),
+            ConversionMode.PngToTtc => ("Drag && drop PNG / JPG scenery tiles here", "Writes a zlib-payload TTC with mipmaps"),
+            ConversionMode.ZipToTme => ("Drag && drop .zip packages here", "Remaps the folder tree for the mobile loader"),
+            ConversionMode.TmeToZip => ("Drag && drop .tme packages here", "Flattens the DLC tree back into a ZIP"),
+            _ => ("Drag files here", ""),
+        };
+        _hintLabel.Text = hint;
+        _pageHint.Text = pageHint;
+
+        _flipRelevant = mode is ConversionMode.TtxToPng or ConversionMode.PngToTtx or
+            ConversionMode.TtcToPng or ConversionMode.PngToTtc;
+        _mipmapsRelevant = mode == ConversionMode.PngToTtc;
+        _compressRelevant = mode == ConversionMode.PngToTtx;
+        _flipCheck.Enabled = _flipRelevant;
+        _flipCheck.Checked = mode is ConversionMode.TtcToPng or ConversionMode.PngToTtc;
+        _mipmapsCheck.Enabled = _mipmapsRelevant;
+        _compressCheck.Enabled = _compressRelevant;
+
+        if (mode == ConversionMode.PngToTtx)
+        {
+            _formatSelect.SetItems([
+                "FS4 PC \u2014 DXT1/5 (auto)",
+                "FS4 PC \u2014 DXT1 (opaque)",
+                "FS4 PC \u2014 DXT5 (alpha)",
+                "Lossless RGBA",
+                "Grayscale R8",
+                "FSG Mobile \u2014 ETC2 RGB",
+                "FSG Mobile \u2014 ETC2 RGBA",
+            ]);
+            _formatSelect.Enabled = true;
+            _formatLabel.Text = "Format";
+            _formatLabel.Visible = true;
+            _formatSelect.Visible = true;
+        }
+        else if (mode == ConversionMode.PngToTtc)
+        {
+            _formatSelect.SetItems([
+                "FS4 PC \u2014 DXT1",
+                "FS4 PC \u2014 DXT5",
+                "FSG Mobile \u2014 ETC2",
+                "R8 mask",
+            ]);
+            _formatSelect.Enabled = true;
+            _formatLabel.Text = "Format";
+            _formatLabel.Visible = true;
+            _formatSelect.Visible = true;
+        }
+        else
+        {
+            _formatSelect.Enabled = false;
+            _formatLabel.Visible = false;
+            _formatSelect.Visible = false;
+        }
+
+        UpdateHint();
+        UpdateFilesSubtitle();
+    }
+
+    private void UpdateHint() => _hintLabel.Visible = _fileList.Items.Count == 0;
+
+    private void UpdateFilesSubtitle()
+    {
+        if (_filesCard is null) return;
+        int count = _fileList.Items.Count;
+        _filesCard.Subtitle = count == 0 ? "nothing queued yet" : $"{count} file(s) queued";
+        _filesCard.Invalidate();
+    }
+
+    private string SelectedTtxFormat => _formatSelect.SelectedIndex switch
+    {
+        0 => "dxt_auto",
+        1 => "dxt1",
+        2 => "dxt5",
+        3 => "type_rgba",
+        4 => "type_r",
+        5 => "type_rgb_etc2",
+        6 => "type_rgba_etc2",
+        _ => "dxt_auto",
+    };
+
+    private string SelectedTtcFormat => _formatSelect.SelectedIndex switch
+    {
+        1 => "dxt5",
+        2 => "etc2",
+        3 => "r8",
+        _ => "dxt1",
+    };
+
+    private void BrowseFiles()
+    {
+        ConversionMode mode = CurrentMode;
+        string[] exts = Converter.InputExtensions(mode);
+        using var dialog = new OpenFileDialog
+        {
+            Multiselect = true,
+            CheckFileExists = true,
+            Title = "Select files to convert",
+            Filter = exts.Length > 0
+                ? $"Supported files|{string.Join(";", exts.Select(e => "*" + e))}|All files|*.*"
+                : "All files|*.*",
+        };
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            AddFiles(dialog.FileNames);
+    }
+
+    private void AddFiles(IEnumerable<string> paths)
+    {
+        var existing = new HashSet<string>(_fileList.Items.Cast<string>(), StringComparer.OrdinalIgnoreCase);
+        foreach (string path in paths)
+        {
+            if (Directory.Exists(path))
+            {
+                foreach (string file in Converter.Expand([path], CurrentMode))
+                    if (existing.Add(file)) _fileList.Items.Add(file);
+            }
+            else if (File.Exists(path) && existing.Add(path))
+            {
+                _fileList.Items.Add(path);
+            }
+        }
+        UpdateHint();
+        UpdateFilesSubtitle();
+        _statusLabel.Text = $"{_fileList.Items.Count} file(s) queued";
+    }
+
+    private void RemoveSelectedFiles()
+    {
+        foreach (string item in _fileList.SelectedItems.Cast<string>().ToList())
+            _fileList.Items.Remove(item);
+        UpdateHint();
+        UpdateFilesSubtitle();
+    }
+
+    private void OnDragEnter(object? sender, DragEventArgs e)
+    {
+        e.Effect = !_busy && e.Data?.GetDataPresent(DataFormats.FileDrop) == true
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+    }
+
+    private void OnDragDrop(object? sender, DragEventArgs e)
+    {
+        if (_busy) return;
+        if (e.Data?.GetData(DataFormats.FileDrop) is string[] files)
+            AddFiles(files);
+    }
+
+    private async Task ConvertAsync()
+    {
+        if (_busy) return;
+        if (_fileList.Items.Count == 0)
+        {
+            using var dialog = new FolderBrowserDialog { Description = "Select a folder to convert" };
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            AddFiles([dialog.SelectedPath]);
+            if (_fileList.Items.Count == 0) return;
+        }
+
+        ConversionMode mode = CurrentMode;
+        var options = new ConvertOptions
+        {
+            Flip = _flipCheck.Checked,
+            TtxFormat = SelectedTtxFormat,
+            TtcFormat = SelectedTtcFormat,
+            TtcMipmaps = _mipmapsCheck.Checked,
+            CompressTtx = _compressCheck.Checked,
+            MaxParallelism = SelectedThreads,
+        };
+
+        var files = _fileList.Items.Cast<string>().ToList();
+        _busy = true;
+        SetBusy(true);
+        _progress.Maximum = files.Count;
+        _progress.Value = 0;
+        _cts = new CancellationTokenSource();
+        _log.Clear();
+        AppendLog($"Mode: {_pageTitle.Text}    files: {files.Count}    threads: {options.MaxParallelism}");
+        var sw = Stopwatch.StartNew();
+        int failures = 0;
+        int done = 0;
+
+        var progress = new Progress<ConversionOutcome>(outcome =>
+        {
+            done++;
+            _progress.Value = Math.Min(done, _progress.Maximum);
+            string name = Path.GetFileName(outcome.Input);
+            if (outcome.Ok)
+            {
+                AppendLog($"[{done}/{files.Count}] {name} \u2192 {Path.GetFileName(outcome.Output)}  " +
+                          $"{outcome.Summary}  ({outcome.Milliseconds:0} ms)");
+                if (outcome.Output is not null)
+                {
+                    _lastOutputFolder = Path.GetDirectoryName(outcome.Output) ?? _lastOutputFolder;
+                    _openFolderButton.Enabled = true;
+                }
+            }
+            else
+            {
+                failures++;
+                AppendLog($"[{done}/{files.Count}] {name}  ERROR: {outcome.Error}", error: true);
+            }
+            _statusLabel.Text = $"{done}/{files.Count}  \u00b7  {failures} failed";
+        });
+
+        try
+        {
+            await Task.Run(() => Converter.ConvertAll(files, mode, options,
+                outcome => ((IProgress<ConversionOutcome>)progress).Report(outcome),
+                log: null, _cts.Token));
+        }
+        catch (OperationCanceledException)
+        {
+            AppendLog("Cancelled.");
+        }
+        finally
+        {
+            sw.Stop();
+            _busy = false;
+            SetBusy(false);
+            double seconds = Math.Max(sw.Elapsed.TotalSeconds, 0.0001);
+            string summary = $"{files.Count - failures}/{files.Count} done in {seconds:0.00} s";
+            AppendLog(summary + (failures > 0 ? $"  ({failures} failed)" : ""), error: failures > 0);
+            _statusLabel.Text = summary;
+        }
+    }
+
+    private void SetBusy(bool busy)
+    {
+        _convertButton.Enabled = !busy;
+        _browseButton.Enabled = !busy;
+        _clearButton.Enabled = !busy;
+        _nav.Enabled = !busy;
+        _formatSelect.Enabled = !busy && _formatSelect.Visible;
+        _threadsSelect.Enabled = !busy;
+        _flipCheck.Enabled = !busy && _flipRelevant;
+        _mipmapsCheck.Enabled = !busy && _mipmapsRelevant;
+        _compressCheck.Enabled = !busy && _compressRelevant;
+        Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+    }
+
+    private void AppendLog(string message, bool error = false)
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(() => AppendLog(message, error));
+            return;
+        }
+        _log.SelectionStart = _log.TextLength;
+        _log.SelectionLength = 0;
+        _log.SelectionColor = error ? Theme.Danger : Color.FromArgb(176, 214, 190);
+        _log.AppendText(message + Environment.NewLine);
+        _log.SelectionStart = _log.TextLength;
+        _log.ScrollToCaret();
+    }
+
+    private void OpenOutputFolder()
+    {
+        if (_lastOutputFolder is null || !Directory.Exists(_lastOutputFolder)) return;
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{_lastOutputFolder}\"") { UseShellExecute = true });
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        _cts?.Cancel();
+        base.OnFormClosed(e);
+    }
+}
+
+
+
+
+
+

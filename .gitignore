@@ -1,0 +1,11 @@
+bin/
+obj/
+dist/
+*.user
+.vs/
+tests/vectors/tmp_ttc/
+tools/CodecCheck/fixtures/
+tools/CodecCheck/*.bin
+bench_out/
+tests/vectors/_verify_tmp/
+docs/shot_trace.txt
