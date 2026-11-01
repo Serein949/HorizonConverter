@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>com.aeroflyconv.app</ApplicationId>
-    <ApplicationVersion>2</ApplicationVersion>
-    <ApplicationDisplayVersion>1.1</ApplicationDisplayVersion>
+    <ApplicationVersion>3</ApplicationVersion>
+    <ApplicationDisplayVersion>1.2</ApplicationDisplayVersion>
     <AssemblyName>AeroflyConv.Android</AssemblyName>
     <RootNamespace>AeroflyConv.Android</RootNamespace>
     <!-- ImageSharp and the audio decoders use reflection; keep trimming conservative. -->

@@ -1,9 +1,10 @@
-﻿using Android.App;
+using Android.App;
 using Android.Content;
 using Android.Database;
 using Android.Graphics;
 using Android.OS;
 using Android.Provider;
+using Android.Text;
 using Android.Views;
 using Android.Widget;
 using AeroflyConv.Core;
@@ -15,251 +16,235 @@ using AndroidResource = Android.Resource;
 
 namespace AeroflyConv.Android;
 
-[Activity(Label = "Aerofly Converter", MainLauncher = true, Theme = "@android:style/Theme.Material.NoActionBar")]
+[Activity(Label = "Aerofly 转换器", MainLauncher = true, Theme = "@android:style/Theme.Material.NoActionBar")]
 public class MainActivity : Activity
 {
     private const int RequestPickFiles = 1001;
+    private const int RequestPickFolder = 1002;
+    private const int RequestPickOutput = 1003;
+    private const string Prefs = "aeroflyconv";
 
     private static readonly Color Bg = Color.ParseColor("#0B0E14");
-    private static readonly Color Card = Color.ParseColor("#151A22");
     private static readonly Color Fg = Color.ParseColor("#F8FAFD");
-    private static readonly Color Muted = Color.ParseColor("#96A0AF");
+    private static readonly Color Muted = Color.ParseColor("#7C8797");
+    private static readonly Color Soft = Color.ParseColor("#C6CEDA");
     private static readonly Color Accent = Color.ParseColor("#00B8FF");
-
-    private readonly List<string> _picked = [];
-
-    private TextView _filesLabel = null!;
-    private TextView _status = null!;
-    private TextView _log = null!;
-    private ProgressBar _progress = null!;
-    private Spinner _modeSpinner = null!;
-    private Button _convertButton = null!;
-    private bool _busy;
 
     private static readonly string[] ModeLabels =
     [
-        "Auto detect (by extension)",
+        "自动识别",
         "TTX \u2192 PNG",
-        "PNG \u2192 TTX (DXT1/5)",
+        "PNG \u2192 TTX",
         "TSB \u2192 WAV",
         "WAV \u2192 TSB",
-        "TM \u2192 TXT (toc/tsc/wad/tmb/tsl)",
+        "TM \u2192 TXT",
         "TTC \u2192 PNG",
         "PNG \u2192 TTC",
     ];
 
+    private static readonly string[] ModeHints =
+    [
+        "根据文件扩展名自动判断转换方向。",
+        "还原 DXT1/3/5、BC5、ETC1/2、ASTC（手机端）以及 RGBA/R8 为 PNG。",
+        "把 PNG 重新编码成 TTX 贴图（DXT1 / DXT5 / ETC2 / R8 或自动）。",
+        "把 Aerofly 音效包解包成 WAV 文件。",
+        "把 WAV 打包成 Aerofly TSB 音效包。",
+        "把 TOC/TSC/WAD/TMB/TSL 容器导出为可读文本。",
+        "把地景贴图容器（.ttc）的第 0 级贴图转成 PNG。",
+        "把 PNG 编码成 .ttc 地景贴图。",
+    ];
+
+    private readonly List<Picked> _picked = [];
+    private readonly List<ResultItem> _results = [];
+
+    private LinearLayout _llModes = null!;
+    private LinearLayout _llFormat = null!;
+    private LinearLayout _llSize = null!;
+    private LinearLayout _llFiles = null!;
+    private LinearLayout _rowFormat = null!, _rowSize = null!, _rowFlip = null!, _rowCompress = null!, _rowTtcMips = null!;
+    private LinearLayout _rowResultActions = null!;
+    private LinearLayout _cardOptions = null!;
+    private TextView _tvModeHint = null!;
+    private TextView _tvFileCount = null!;
+    private TextView _tvEmpty = null!;
+    private TextView _tvStatus = null!;
+    private TextView _tvLog = null!;
+    private TextView _tvOutput = null!;
+    private ProgressBar _progress = null!;
+    private Switch _swFlip = null!;
+    private Switch _swCompress = null!;
+    private Switch _swTtcMips = null!;
+    private Button _btnConvert = null!;
+    private ScrollView _scrollLog = null!;
+
+    private PillGroup _modes = null!;
+    private PillGroup _formats = null!;
+    private PillGroup _sizes = null!;
+
+    private static readonly string[] FormatLabels = ["自动", "DXT1", "DXT5", "ETC2", "R8"];
+    private static readonly string[] TTXFormats = ["dxt_auto", "dxt1", "dxt5", "etc2", "r8"];
+    private static readonly string[] TtcFormats = ["dxt1", "dxt1", "dxt5", "etc2", "r8"];
+    private static readonly string[] SizeLabels = ["匹配原尺寸", "4096", "2048", "1024", "源尺寸"];
+    private static readonly int?[] SizeValues = [null, 4096, 2048, 1024, null];
+
+    private Uri? _outputTree;
+    private bool _busy;
+    private CancellationTokenSource? _cts;
+
+    private sealed record Picked(string LocalPath, string DisplayName);
+    private sealed record ResultItem(string DisplayName, string Where, Uri? Uri);
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        Window?.SetStatusBarColor(Color.ParseColor("#0B0E14"));
-        Window?.SetNavigationBarColor(Color.ParseColor("#0B0E14"));
+        Window?.SetStatusBarColor(Bg);
+        Window?.SetNavigationBarColor(Bg);
 
-        SetContentView(BuildUi());
+        SetContentView(Resource.Layout.activity_main);
+        BindViews();
+        BuildPills();
+        RestoreState();
+        WireEvents();
 
-        // create the drop folder so files can also be copied in over USB / adb
         try
         {
             Directory.CreateDirectory(Path.Combine(BaseDir(), "in"));
             Directory.CreateDirectory(Path.Combine(BaseDir(), "out"));
-            Log("drop folder: " + Path.Combine(BaseDir(), "in"));
         }
         catch (Exception ex)
         {
-            Log("cannot create folders: " + ex.Message);
+            Log("无法创建目录：" + ex.Message);
         }
+
+        Log("就绪 · 输出：" + OutputLabel());
+        UpdateModeUi();
 
         if (Intent?.GetBooleanExtra("autorun", false) == true)
         {
-            _modeSpinner.SetSelection(ModeFromName(Intent.GetStringExtra("mode")));
+            if (Intent.GetStringExtra("mode") is { } m)
+            {
+                int index = ModeFromName(m);
+                _modes.SetSelected(index);
+                SaveState();
+            }
+            if (Intent.GetStringExtra("format") is { } f)
+            {
+                int fi = Array.IndexOf(TTXFormats, f.ToLowerInvariant());
+                if (fi >= 0) _formats.SetSelected(fi);
+            }
+            if (Intent.GetBooleanExtra("nocompress", false))
+            {
+                _swCompress.Checked = false;
+            }
+            UpdateModeUi();
             RunAutoAsync();
+            return;
+        }
+
+        AcceptIncoming(Intent);
+    }
+
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        AcceptIncoming(intent);
+    }
+
+    // ------------------------------------------------------------------ views
+
+    private void BindViews()
+    {
+        _llModes = FindViewById<LinearLayout>(Resource.Id.llModes)!;
+        _llFormat = FindViewById<LinearLayout>(Resource.Id.llFormat)!;
+        _llSize = FindViewById<LinearLayout>(Resource.Id.llSize)!;
+        _llFiles = FindViewById<LinearLayout>(Resource.Id.llFiles)!;
+        _rowFormat = FindViewById<LinearLayout>(Resource.Id.rowFormat)!;
+        _rowSize = FindViewById<LinearLayout>(Resource.Id.rowSize)!;
+        _rowFlip = FindViewById<LinearLayout>(Resource.Id.rowFlip)!;
+        _rowCompress = FindViewById<LinearLayout>(Resource.Id.rowCompress)!;
+        _rowTtcMips = FindViewById<LinearLayout>(Resource.Id.rowTtcMips)!;
+        _rowResultActions = FindViewById<LinearLayout>(Resource.Id.rowResultActions)!;
+        _cardOptions = FindViewById<LinearLayout>(Resource.Id.cardOptions)!;
+        _tvFileCount = FindViewById<TextView>(Resource.Id.tvFileCount)!;
+        _tvEmpty = FindViewById<TextView>(Resource.Id.tvEmpty)!;
+        _tvStatus = FindViewById<TextView>(Resource.Id.tvStatus)!;
+        _tvLog = FindViewById<TextView>(Resource.Id.tvLog)!;
+        _tvOutput = FindViewById<TextView>(Resource.Id.tvOutput)!;
+        _progress = FindViewById<ProgressBar>(Resource.Id.progress)!;
+        _swFlip = FindViewById<Switch>(Resource.Id.swFlip)!;
+        _swCompress = FindViewById<Switch>(Resource.Id.swCompress)!;
+        _swTtcMips = FindViewById<Switch>(Resource.Id.swTtcMips)!;
+        _btnConvert = FindViewById<Button>(Resource.Id.btnConvert)!;
+        _scrollLog = FindViewById<ScrollView>(Resource.Id.scrollLog)!;
+
+        // mode hint line under the pills
+        _tvModeHint = new TextView(this) { TextSize = 11 };
+        _tvModeHint.SetTextColor(Color.ParseColor("#5C6779"));
+        var hintParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
+        hintParams.TopMargin = Dp(8);
+        FindViewById<LinearLayout>(Resource.Id.cardMode)!.AddView(_tvModeHint, hintParams);
+
+        foreach (Button b in new[] { FindViewById<Button>(Resource.Id.btnAddFiles)!, FindViewById<Button>(Resource.Id.btnAddFolder)!, FindViewById<Button>(Resource.Id.btnClear)!, FindViewById<Button>(Resource.Id.btnPickOutput)!, FindViewById<Button>(Resource.Id.btnOpen)!, FindViewById<Button>(Resource.Id.btnShare)! })
+        {
+            b.StateListAnimator = null;
+        }
+
+        ApplyWindowInsets();
+    }
+
+    private void ApplyWindowInsets()
+    {
+        var root = FindViewById<ScrollView>(Resource.Id.rootScroll)!;
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.R)
+        {
+            root.SetOnApplyWindowInsetsListener(new InsetApplier());
+        }
+        else
+        {
+            root.SetPadding(0, Dp(24), 0, Dp(12));
         }
     }
 
-    // ------------------------------------------------------------------ UI
-
-    private View BuildUi()
+    private sealed class InsetApplier : Java.Lang.Object, View.IOnApplyWindowInsetsListener
     {
-        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetBackgroundColor(Bg);
-        root.SetPadding(Dp(18), Dp(24), Dp(18), Dp(16));
-
-        var title = new TextView(this) { Text = "Aerofly Converter", TextSize = 24 };
-        title.SetTextColor(Fg);
-        title.Typeface = Typeface.DefaultBold;
-        root.AddView(title);
-
-        var subtitle = new TextView(this)
+        public WindowInsets? OnApplyWindowInsets(View? v, WindowInsets? insets)
         {
-            Text = "TTX \u2194 PNG   TSB \u2194 WAV   TTC \u2194 PNG   TOC \u2192 TXT",
-            TextSize = 12,
-        };
-        subtitle.SetTextColor(Muted);
-        root.AddView(subtitle);
-
-        _modeSpinner = new Spinner(this);
-        var adapter = new ArrayAdapter<string>(this, AndroidResource.Layout.SimpleSpinnerDropDownItem, ModeLabels);
-        adapter.SetDropDownViewResource(AndroidResource.Layout.SimpleSpinnerDropDownItem);
-        _modeSpinner.Adapter = adapter;
-        var spinnerParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(48));
-        spinnerParams.TopMargin = Dp(16);
-        root.AddView(_modeSpinner, spinnerParams);
-
-        var buttonRow = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        var buttonRowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(52));
-        buttonRowParams.TopMargin = Dp(14);
-        root.AddView(buttonRow, buttonRowParams);
-
-        var pick = MakeButton("Select files", accent: false);
-        pick.Click += (_, _) => PickFiles();
-        buttonRow.AddView(pick, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MatchParent, 1f));
-
-        _convertButton = MakeButton("Convert", accent: true);
-        _convertButton.Click += async (_, _) => await ConvertPickedAsync();
-        var convertParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MatchParent, 1f);
-        convertParams.LeftMargin = Dp(10);
-        buttonRow.AddView(_convertButton, convertParams);
-
-        _filesLabel = new TextView(this) { Text = "No files selected", TextSize = 12 };
-        _filesLabel.SetTextColor(Muted);
-        var filesParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
-        filesParams.TopMargin = Dp(14);
-        root.AddView(_filesLabel, filesParams);
-
-        _progress = new ProgressBar(this, null, AndroidResource.Attribute.ProgressBarStyleHorizontal) { Max = 1 };
-        var progressParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(10));
-        progressParams.TopMargin = Dp(12);
-        root.AddView(_progress, progressParams);
-
-        _status = new TextView(this) { Text = "Ready", TextSize = 12 };
-        _status.SetTextColor(Muted);
-        var statusParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
-        statusParams.TopMargin = Dp(6);
-        root.AddView(_status, statusParams);
-
-        var scroll = new ScrollView(this);
-        var scrollParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, 0, 1f);
-        scrollParams.TopMargin = Dp(12);
-        root.AddView(scroll, scrollParams);
-
-        _log = new TextView(this)
-        {
-            Text = "Results are saved to Download/AeroflyConv",
-            TextSize = 11,
-        };
-        _log.SetTextColor(Color.ParseColor("#B0D6BE"));
-        _log.Typeface = Typeface.Monospace;
-        _log.SetTextIsSelectable(true);
-
-        var logCard = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        logCard.SetBackgroundColor(Card);
-        logCard.SetPadding(Dp(12), Dp(12), Dp(12), Dp(12));
-        logCard.AddView(_log);
-        scroll.AddView(logCard);
-        return root;
+            if (v is null || insets is null) return insets;
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.R)
+            {
+                var bars = insets.GetInsets(WindowInsets.Type.SystemBars() | WindowInsets.Type.DisplayCutout());
+                v.SetPadding(0, bars.Top, 0, bars.Bottom);
+            }
+            return insets;
+        }
     }
 
-    private Button MakeButton(string text, bool accent)
+    private void BuildPills()
     {
-        var button = new Button(this) { Text = text, TextSize = 14 };
-        button.SetTextColor(accent ? Color.ParseColor("#04121A") : Fg);
-        button.SetBackgroundColor(accent ? Accent : Card);
-        button.SetAllCaps(false);
-        return button;
+        _modes = new PillGroup(this, _llModes, ModeLabels, 0, _ => UpdateModeUi());
+        _formats = new PillGroup(this, _llFormat, FormatLabels, 0, _ => { });
+        _sizes = new PillGroup(this, _llSize, SizeLabels, 0, _ => { });
+    }
+
+    private void WireEvents()
+    {
+        FindViewById<Button>(Resource.Id.btnAddFiles)!.Click += (_, _) => PickFiles();
+        FindViewById<Button>(Resource.Id.btnAddFolder)!.Click += (_, _) => PickFolder();
+        FindViewById<Button>(Resource.Id.btnClear)!.Click += (_, _) => ClearFiles();
+        FindViewById<Button>(Resource.Id.btnPickOutput)!.Click += (_, _) => PickOutputFolder();
+        FindViewById<Button>(Resource.Id.btnOpen)!.Click += (_, _) => OpenLast();
+        FindViewById<Button>(Resource.Id.btnShare)!.Click += (_, _) => ShareLast();
+        _btnConvert.Click += async (_, _) => await OnConvertClicked();
+
+        _swFlip.CheckedChange += (_, _) => SaveState();
+        _swCompress.CheckedChange += (_, _) => SaveState();
+        _swTtcMips.CheckedChange += (_, _) => SaveState();
     }
 
     private int Dp(int value) => (int)(value * (Resources?.DisplayMetrics?.Density ?? 1f));
 
-    private void Log(string message) => RunOnUiThread(() => _log.Text += "\n" + message);
-
-    private void SetStatus(string text) => RunOnUiThread(() => _status.Text = text);
-
-    // ------------------------------------------------------------------ picking
-
-    private void PickFiles()
-    {
-        var intent = new Intent(Intent.ActionOpenDocument);
-        intent.AddCategory(Intent.CategoryOpenable);
-        intent.SetType("*/*");
-        intent.PutExtra(Intent.ExtraAllowMultiple, true);
-        StartActivityForResult(intent, RequestPickFiles);
-    }
-
-    protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
-    {
-        base.OnActivityResult(requestCode, resultCode, data);
-        if (requestCode != RequestPickFiles || resultCode != Result.Ok || data is null) return;
-
-        var uris = new List<Uri>();
-        if (data.ClipData is not null)
-        {
-            for (int i = 0; i < data.ClipData.ItemCount; i++)
-            {
-                Uri? uri = data.ClipData.GetItemAt(i)?.Uri;
-                if (uri is not null) uris.Add(uri);
-            }
-        }
-        else if (data.Data is not null)
-        {
-            uris.Add(data.Data);
-        }
-
-        foreach (Uri uri in uris)
-        {
-            string name = DisplayName(uri) ?? $"file_{_picked.Count}";
-            string local = CopyToCache(uri, name);
-            if (local.Length > 0) _picked.Add(local);
-        }
-
-        _filesLabel.Text = _picked.Count == 0
-            ? "No files selected"
-            : $"{_picked.Count} file(s): " + string.Join(", ", _picked.Select(Path.GetFileName));
-    }
-
-    private string? DisplayName(Uri uri)
-    {
-        try
-        {
-            using ICursor? cursor = ContentResolver?.Query(uri, [IOpenableColumns.DisplayName], null, null, null);
-            if (cursor is not null && cursor.MoveToFirst())
-            {
-                int index = cursor.GetColumnIndex(IOpenableColumns.DisplayName);
-                if (index >= 0) return cursor.GetString(index);
-            }
-        }
-        catch (Exception)
-        {
-            // fall back to the path segment
-        }
-        return uri.LastPathSegment?.Split('/').Last();
-    }
-
-    private string CopyToCache(Uri uri, string displayName)
-    {
-        try
-        {
-            string dir = Path.Combine(CacheDir!.AbsolutePath, "in");
-            Directory.CreateDirectory(dir);
-            string target = Path.Combine(dir, Sanitize(displayName));
-            using Stream? input = ContentResolver?.OpenInputStream(uri);
-            if (input is null) return "";
-            using var output = File.Create(target);
-            input.CopyTo(output);
-            return target;
-        }
-        catch (Exception ex)
-        {
-            Log("read failed: " + ex.Message);
-            return "";
-        }
-    }
-
-    private static string Sanitize(string name)
-    {
-        foreach (char c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
-        return string.IsNullOrWhiteSpace(name) ? "file.bin" : name;
-    }
-
-    // ------------------------------------------------------------------ converting
+    // ------------------------------------------------------------------ mode / options
 
     private static ConversionMode SelectedMode(int index) => index switch
     {
@@ -285,97 +270,460 @@ public class MainActivity : Activity
         _ => 0,
     };
 
-    private async Task ConvertPickedAsync()
+    private bool IsTextureMode(int index) => index is 1 or 2 or 6 or 7;
+
+    private void UpdateModeUi()
     {
-        if (_busy) return;
+        int mode = _modes.SelectedIndex;
+        _tvModeHint.Text = ModeHints[mode];
+
+        _rowFormat.Visibility = mode is 2 or 7 ? ViewStates.Visible : ViewStates.Gone;
+        _rowSize.Visibility = mode is 2 or 7 ? ViewStates.Visible : ViewStates.Gone;
+        _rowFlip.Visibility = IsTextureMode(mode) ? ViewStates.Visible : ViewStates.Gone;
+        _rowCompress.Visibility = mode == 2 ? ViewStates.Visible : ViewStates.Gone;
+        _rowTtcMips.Visibility = mode == 7 ? ViewStates.Visible : ViewStates.Gone;
+
+        bool anyOption = _rowFormat.Visibility == ViewStates.Visible
+            || _rowSize.Visibility == ViewStates.Visible
+            || _rowFlip.Visibility == ViewStates.Visible
+            || _rowCompress.Visibility == ViewStates.Visible
+            || _rowTtcMips.Visibility == ViewStates.Visible;
+        _cardOptions.Visibility = anyOption ? ViewStates.Visible : ViewStates.Gone;
+
+        if (mode == 2)
+        {
+            _llFormat.Visibility = ViewStates.Visible;
+            SetFormatVisibility([true, true, true, true, true]);
+        }
+        else if (mode == 7)
+        {
+            _llFormat.Visibility = ViewStates.Visible;
+            SetFormatVisibility([false, true, true, true, true]);
+        }
+
+        _btnConvert.Text = "开始转换";
+    }
+
+    private void SetFormatVisibility(bool[] enabled)
+    {
+        for (int i = 0; i < _formats.Count && i < enabled.Length; i++)
+            _formats.SetEnabled(i, enabled[i]);
+        if (!enabled[_formats.SelectedIndex])
+        {
+            for (int i = 0; i < enabled.Length; i++)
+            {
+                if (enabled[i])
+                {
+                    _formats.SetSelected(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    private ConvertOptions BuildOptions()
+    {
+        int mode = _modes.SelectedIndex;
+        var options = new ConvertOptions
+        {
+            Flip = _swFlip.Checked,
+            FlipExplicit = IsTextureMode(mode),
+            CompressTtx = _swCompress.Checked,
+            TtcMipmaps = _swTtcMips.Checked,
+            MaxParallelism = 1,
+            Overwrite = true,
+        };
+
+        if (mode == 2)
+        {
+            options.TtxFormat = TTXFormats[_formats.SelectedIndex];
+        }
+        else if (mode == 7)
+        {
+            options.TtcFormat = TtcFormats[_formats.SelectedIndex];
+        }
+
+        int sizeIndex = _sizes.SelectedIndex;
+        options.TargetTextureSize = SizeValues[sizeIndex];
+        options.FitExistingTexture = sizeIndex == 0;
+        return options;
+    }
+
+    // ------------------------------------------------------------------ files
+
+    private void PickFiles()
+    {
+        var intent = new Intent(Intent.ActionOpenDocument);
+        intent.AddCategory(Intent.CategoryOpenable);
+        intent.SetType("*/*");
+        intent.PutExtra(Intent.ExtraAllowMultiple, true);
+        StartActivityForResult(intent, RequestPickFiles);
+    }
+
+    private void PickFolder()
+    {
+        var intent = new Intent(Intent.ActionOpenDocumentTree);
+        intent.AddFlags(ActivityFlags.GrantReadUriPermission);
+        StartActivityForResult(intent, RequestPickFolder);
+    }
+
+    private void PickOutputFolder()
+    {
+        var intent = new Intent(Intent.ActionOpenDocumentTree);
+        intent.AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.GrantWriteUriPermission
+            | ActivityFlags.GrantPersistableUriPermission);
+        StartActivityForResult(intent, RequestPickOutput);
+    }
+
+    protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        base.OnActivityResult(requestCode, resultCode, data);
+        if (resultCode != Result.Ok || data?.Data is null) return;
+        Uri uri = data.Data;
+
+        switch (requestCode)
+        {
+            case RequestPickFiles:
+            {
+                var uris = new List<Uri>();
+                if (data.ClipData is not null)
+                {
+                    for (int i = 0; i < data.ClipData.ItemCount; i++)
+                    {
+                        if (data.ClipData.GetItemAt(i)?.Uri is { } item) uris.Add(item);
+                    }
+                }
+                else
+                {
+                    uris.Add(uri);
+                }
+
+                foreach (Uri item in uris) AddFromUri(item);
+                RenderFiles();
+                break;
+            }
+
+            case RequestPickFolder:
+                AddFromTree(uri);
+                RenderFiles();
+                break;
+
+            case RequestPickOutput:
+                _outputTree = uri;
+                try
+                {
+                    ContentResolver?.TakePersistableUriPermission(uri,
+                        ActivityFlags.GrantReadUriPermission | ActivityFlags.GrantWriteUriPermission);
+                }
+                catch (Exception ex)
+                {
+                    Log("无法保存文件夹权限：" + ex.Message);
+                }
+                SaveState();
+                _tvOutput.Text = OutputLabel();
+                Log("输出文件夹：" + OutputLabel());
+                break;
+        }
+    }
+
+    private void AddFromUri(Uri uri)
+    {
+        string name = DisplayName(uri) ?? $"file_{_picked.Count}";
+        string local = CopyToCache(uri, name);
+        if (local.Length > 0)
+        {
+            _picked.Add(new Picked(local, name));
+            Log("已添加 " + name);
+        }
+    }
+
+    private void AddFromTree(Uri tree)
+    {
+        try
+        {
+            string rootId = DocumentsContract.GetTreeDocumentId(tree)!;
+            int added = WalkTree(tree, rootId, 0);
+            Log($"文件夹扫描：找到 {added} 个可转换文件");
+        }
+        catch (Exception ex)
+        {
+            Log("文件夹扫描失败：" + ex.Message);
+        }
+    }
+
+    private int WalkTree(Uri tree, string documentId, int depth)
+    {
+        if (depth > 8) return 0;
+        int added = 0;
+        Uri children = DocumentsContract.BuildChildDocumentsUriUsingTree(tree, documentId);
+        string[] projection =
+        [
+            DocumentsContract.Document.ColumnDocumentId,
+            DocumentsContract.Document.ColumnDisplayName,
+            DocumentsContract.Document.ColumnMimeType,
+        ];
+
+        using ICursor? cursor = ContentResolver?.Query(children, projection, null, null, null);
+        if (cursor is null) return 0;
+        while (cursor.MoveToNext())
+        {
+            string? id = cursor.GetString(0);
+            string? name = cursor.GetString(1);
+            string? mime = cursor.GetString(2);
+            if (id is null || name is null) continue;
+
+            if (mime == DocumentsContract.Document.MimeTypeDir)
+            {
+                added += WalkTree(tree, id, depth + 1);
+                continue;
+            }
+
+            if (!IsSupported(name)) continue;
+            Uri fileUri = DocumentsContract.BuildDocumentUriUsingTree(tree, id);
+            string local = CopyToCache(fileUri, name);
+            if (local.Length == 0) continue;
+            _picked.Add(new Picked(local, name));
+            added++;
+        }
+        return added;
+    }
+
+    private static bool IsSupported(string name) => Path.GetExtension(name).ToLowerInvariant() switch
+    {
+        ".ttx" or ".tsb" or ".ttc" or ".tmc" or ".tsc" or ".wad" or ".tmb" or ".tsl"
+            or ".png" or ".wav" or ".jpg" or ".jpeg" or ".mp3" or ".ogg" or ".flac" or ".tme" or ".zip" => true,
+        _ => false,
+    };
+
+    private void ClearFiles()
+    {
+        _picked.Clear();
+        _results.Clear();
+        _rowResultActions.Visibility = ViewStates.Gone;
+        _progress.Visibility = ViewStates.Invisible;
+        RenderFiles();
+        SetStatus("就绪");
+    }
+
+    private void RemoveFile(int index)
+    {
+        if (index < 0 || index >= _picked.Count) return;
+        _picked.RemoveAt(index);
+        RenderFiles();
+    }
+
+    private void RenderFiles()
+    {
+        _llFiles.RemoveAllViews();
+        _tvFileCount.Text = _picked.Count.ToString();
+        _tvEmpty.Visibility = _picked.Count == 0 ? ViewStates.Visible : ViewStates.Gone;
+
+        for (int i = 0; i < _picked.Count; i++)
+        {
+            Picked item = _picked[i];
+            var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+            row.SetBackgroundResource(Resource.Drawable.bg_file_row);
+            row.SetPadding(Dp(10), Dp(8), Dp(6), Dp(8));
+            var rowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
+            rowParams.TopMargin = Dp(6);
+
+            var label = new TextView(this) { TextSize = 12 };
+            label.SetTextColor(Soft);
+            long size = new FileInfo(item.LocalPath).Length;
+            label.Text = $"{item.DisplayName}\n{FormatSize(size)}";
+            label.SetSingleLine(false);
+            row.AddView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
+
+            var remove = new TextView(this) { Text = "\u2715", TextSize = 16 };
+            remove.SetTextColor(Color.ParseColor("#6B7686"));
+            remove.Gravity = GravityFlags.Center;
+            remove.SetPadding(Dp(10), Dp(2), Dp(10), Dp(2));
+            int index = i;
+            remove.Click += (_, _) => RemoveFile(index);
+            row.AddView(remove);
+
+            _llFiles.AddView(row, rowParams);
+        }
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        >= 1024 * 1024 => $"{bytes / 1024.0 / 1024.0:0.0} MB",
+        >= 1024 => $"{bytes / 1024.0:0.0} KB",
+        _ => $"{bytes} B",
+    };
+
+    private string? DisplayName(Uri uri)
+    {
+        try
+        {
+            using ICursor? cursor = ContentResolver?.Query(uri, [IOpenableColumns.DisplayName], null, null, null);
+            if (cursor is not null && cursor.MoveToFirst())
+            {
+                int index = cursor.GetColumnIndex(IOpenableColumns.DisplayName);
+                if (index >= 0) return cursor.GetString(index);
+            }
+        }
+        catch (Exception)
+        {
+            // fall back to the path segment
+        }
+        return uri.LastPathSegment?.Split('/').Last();
+    }
+
+    private string CopyToCache(Uri uri, string displayName)
+    {
+        try
+        {
+            string dir = Path.Combine(CacheDir!.AbsolutePath, "in");
+            Directory.CreateDirectory(dir);
+            string target = UniquePath(dir, Sanitize(displayName));
+            using Stream? input = ContentResolver?.OpenInputStream(uri);
+            if (input is null) return "";
+            using var output = File.Create(target);
+            input.CopyTo(output);
+            return target;
+        }
+        catch (Exception ex)
+        {
+            Log("读取失败：" + ex.Message);
+            return "";
+        }
+    }
+
+    private static string UniquePath(string dir, string name)
+    {
+        string target = Path.Combine(dir, name);
+        if (!File.Exists(target)) return target;
+        string stem = Path.GetFileNameWithoutExtension(name);
+        string ext = Path.GetExtension(name);
+        for (int i = 2; ; i++)
+        {
+            target = Path.Combine(dir, $"{stem}_{i}{ext}");
+            if (!File.Exists(target)) return target;
+        }
+    }
+
+    private static string Sanitize(string name)
+    {
+        foreach (char c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
+        return string.IsNullOrWhiteSpace(name) ? "file.bin" : name;
+    }
+
+    // ------------------------------------------------------------------ converting
+
+    private async Task OnConvertClicked()
+    {
+        if (_busy)
+        {
+            _cts?.Cancel();
+            Log("正在取消…");
+            return;
+        }
+
         if (_picked.Count == 0)
         {
-            Log("select files first");
+            Log("请先添加文件");
             return;
         }
 
         _busy = true;
-        _convertButton.Enabled = false;
+        _cts = new CancellationTokenSource();
+        _btnConvert.Text = "取消";
+        _progress.Visibility = ViewStates.Visible;
         _progress.Max = _picked.Count;
         _progress.Progress = 0;
+        _results.Clear();
+        _rowResultActions.Visibility = ViewStates.Gone;
 
-        ConversionMode mode = SelectedMode(_modeSpinner.SelectedItemPosition);
-        await Task.Run(() => ConvertFiles(_picked, mode));
+        var files = _picked.ToList();
+        ConversionMode mode = SelectedMode(_modes.SelectedIndex);
+        ConvertOptions options = BuildOptions();
+        CancellationToken token = _cts.Token;
 
-        _busy = false;
-        _convertButton.Enabled = true;
-        SetStatus("Done");
-    }
+        Log($"\n\u2014 {files.Count} 个文件 · {ModeLabels[_modes.SelectedIndex]} \u2014");
 
-    private void ConvertFiles(IReadOnlyList<string> files, ConversionMode mode)
-    {
-        var options = new ConvertOptions
+        await Task.Run(() =>
         {
-            FlipExplicit = false,               // texture modes flip (bottom-up storage)
-            TtxFormat = TextureFormats.AutoDxt,
-            CompressTtx = true,
-            MaxParallelism = Math.Clamp(System.Environment.ProcessorCount, 1, 4),
-        };
-
-        int ok = 0, failed = 0, done = 0;
-
-        foreach (string file in files)
-        {
-            ConversionOutcome outcome = Converter.ConvertFile(file, null, mode, options);
-            done++;
-            RunOnUiThread(() => _progress.Progress = done);
-
-            if (!outcome.Ok || outcome.Output is null)
+            int ok = 0, failed = 0, done = 0;
+            foreach (Picked file in files)
             {
-                failed++;
-                Log($"FAIL {Path.GetFileName(file)}: {outcome.Error}");
-                continue;
+                if (token.IsCancellationRequested)
+                {
+                    Log("已取消");
+                    break;
+                }
+
+                ConversionOutcome outcome = Converter.ConvertFile(file.LocalPath, null, mode, options);
+                done++;
+                int progressValue = done;
+                RunOnUiThread(() => _progress.Progress = progressValue);
+
+                if (!outcome.Ok || outcome.Output is null)
+                {
+                    failed++;
+                    Log($"失败 {file.DisplayName}：{outcome.Error}");
+                    continue;
+                }
+
+                string produced = outcome.Output;
+                string name = Path.GetFileName(produced);
+                try
+                {
+                    (string where, Uri? uri) = Publish(produced, name);
+                    _results.Add(new ResultItem(name, where, uri));
+                    ok++;
+                    Log($"完成 {file.DisplayName} \u2192 {where}");
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    Log($"写入失败 {name}：{ex.Message}");
+                }
+
+                SetStatus($"{done}/{files.Count} · 成功 {ok}，失败 {failed}");
             }
 
+            SetStatus(failed == 0
+                ? $"已转换 {ok} 个文件"
+                : $"成功 {ok} 个，失败 {failed} 个");
+        });
+
+        _busy = false;
+        _cts = null;
+        _btnConvert.Text = "开始转换";
+        _rowResultActions.Visibility = _results.Count > 0 ? ViewStates.Visible : ViewStates.Gone;
+    }
+
+    private (string Where, Uri? Uri) Publish(string localPath, string displayName)
+    {
+        string mime = MimeFor(displayName);
+
+        if (_outputTree is not null)
+        {
             try
             {
-                string published = PublishToDownloads(outcome.Output, Path.GetFileName(outcome.Output));
-                ok++;
-                Log($"OK   {Path.GetFileName(file)} \u2192 {published}");
+                string parentId = DocumentsContract.GetTreeDocumentId(_outputTree)!;
+                Uri parent = DocumentsContract.BuildDocumentUriUsingTree(_outputTree, parentId);
+                Uri? created = DocumentsContract.CreateDocument(ContentResolver!, parent, mime, displayName);
+                if (created is not null)
+                {
+                    using Stream? output = ContentResolver!.OpenOutputStream(created);
+                    if (output is not null)
+                    {
+                        using FileStream input = File.OpenRead(localPath);
+                        input.CopyTo(output);
+                        return (displayName, created);
+                    }
+                }
             }
             catch (Exception ex)
             {
-                failed++;
-                Log($"FAIL publishing {Path.GetFileName(outcome.Output)}: {ex.Message}");
+                Log("写入所选文件夹失败：" + ex.Message);
             }
-
-            SetStatus($"{done}/{files.Count}  \u00b7  {ok} ok, {failed} failed");
         }
 
-        SetStatus($"{ok}/{files.Count} converted" + (failed > 0 ? $", {failed} failed" : ""));
-    }
-
-    private string BaseDir() => GetExternalFilesDir(null)?.AbsolutePath ?? CacheDir!.AbsolutePath;
-
-    private string OutputDirectory()
-    {
-        string dir = Path.Combine(BaseDir(), "out");
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
-
-    private void LogResult(string message)
-    {
-        try
-        {
-            File.AppendAllText(Path.Combine(OutputDirectory(), "log.txt"),
-                DateTime.Now.ToString("HH:mm:ss") + " " + message + System.Environment.NewLine);
-        }
-        catch (Exception)
-        {
-            // best effort only
-        }
-    }
-
-    /// <summary>Copies a result into the public Download collection so the file manager can see it.</summary>
-    private string PublishToDownloads(string localPath, string displayName)
-    {
-        string mime = MimeFor(displayName);
         if (Build.VERSION.SdkInt >= BuildVersionCodes.Q)
         {
             var values = new ContentValues();
@@ -392,14 +740,14 @@ public class MainActivity : Activity
                 {
                     using FileStream input = File.OpenRead(localPath);
                     input.CopyTo(output);
-                    return "Download/AeroflyConv/" + displayName;
+                    return ("Download/AeroflyConv/" + displayName, target);
                 }
             }
         }
 
         string dest = Path.Combine(OutputDirectory(), displayName);
         File.Copy(localPath, dest, overwrite: true);
-        return dest;
+        return (dest, null);
     }
 
     private static string MimeFor(string name) => Path.GetExtension(name).ToLowerInvariant() switch
@@ -411,9 +759,155 @@ public class MainActivity : Activity
         _ => "application/octet-stream",
     };
 
+    private void OpenLast()
+    {
+        if (_results.Count == 0) return;
+        ResultItem item = _results[^1];
+        if (item.Uri is null)
+        {
+            Log("无法打开 " + item.DisplayName);
+            return;
+        }
+        try
+        {
+            var intent = new Intent(Intent.ActionView);
+            intent.SetDataAndType(item.Uri, MimeFor(item.DisplayName));
+            intent.AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.NewTask);
+            StartActivity(intent);
+        }
+        catch (Exception ex)
+        {
+            Log("没有应用能打开此文件：" + ex.Message);
+        }
+    }
+
+    private void ShareLast()
+    {
+        if (_results.Count == 0) return;
+        ResultItem item = _results[^1];
+        try
+        {
+            var intent = new Intent(Intent.ActionSend);
+            intent.SetType(MimeFor(item.DisplayName));
+            if (item.Uri is not null)
+            {
+                intent.PutExtra(Intent.ExtraStream, item.Uri);
+                intent.AddFlags(ActivityFlags.GrantReadUriPermission);
+            }
+            else
+            {
+                intent.PutExtra(Intent.ExtraText, item.Where);
+            }
+            StartActivity(Intent.CreateChooser(intent, "分享 " + item.DisplayName)!);
+        }
+        catch (Exception ex)
+        {
+            Log("分享失败：" + ex.Message);
+        }
+    }
+
+    private void AcceptIncoming(Intent? intent)
+    {
+        if (intent is null) return;
+        if (intent.Action != Intent.ActionSend && intent.Action != Intent.ActionView) return;
+
+        var uris = new List<Uri>();
+        if (intent.ClipData is not null)
+        {
+            for (int i = 0; i < intent.ClipData.ItemCount; i++)
+            {
+                if (intent.ClipData.GetItemAt(i)?.Uri is { } uri) uris.Add(uri);
+            }
+        }
+        if (intent.Data is not null) uris.Add(intent.Data);
+        if (uris.Count == 0) return;
+
+        foreach (Uri uri in uris) AddFromUri(uri);
+        RenderFiles();
+    }
+
+    // ------------------------------------------------------------------ output folder
+
+    private string BaseDir() => GetExternalFilesDir(null)?.AbsolutePath ?? CacheDir!.AbsolutePath;
+
+    private string OutputDirectory()
+    {
+        string dir = Path.Combine(BaseDir(), "out");
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    private string OutputLabel()
+    {
+        if (_outputTree is null) return "Download/AeroflyConv";
+        try
+        {
+            string id = DocumentsContract.GetTreeDocumentId(_outputTree)!;
+            return id.Split(':').Last();
+        }
+        catch (Exception)
+        {
+            return "已选文件夹";
+        }
+    }
+
+    // ------------------------------------------------------------------ state
+
+    private void SaveState()
+    {
+        var prefs = GetSharedPreferences(Prefs, FileCreationMode.Private)!;
+        using var editor = prefs.Edit()!;
+        editor.PutInt("mode", _modes.SelectedIndex);
+        editor.PutInt("format", _formats.SelectedIndex);
+        editor.PutInt("size", _sizes.SelectedIndex);
+        editor.PutBoolean("flip", _swFlip.Checked);
+        editor.PutBoolean("compress", _swCompress.Checked);
+        editor.PutBoolean("ttcmips", _swTtcMips.Checked);
+        editor.PutString("tree", _outputTree?.ToString());
+        editor.Apply();
+    }
+
+    private void RestoreState()
+    {
+        var prefs = GetSharedPreferences(Prefs, FileCreationMode.Private)!;
+        bool textureDefault = _modes.SelectedIndex is 1 or 2 or 6 or 7;
+        _modes.SetSelected(Math.Clamp(prefs.GetInt("mode", 0), 0, ModeLabels.Length - 1));
+        _formats.SetSelected(Math.Clamp(prefs.GetInt("format", 0), 0, FormatLabels.Length - 1));
+        _sizes.SetSelected(Math.Clamp(prefs.GetInt("size", 0), 0, SizeLabels.Length - 1));
+        _swFlip.Checked = prefs.GetBoolean("flip", true);
+        _swCompress.Checked = prefs.GetBoolean("compress", true);
+        _swTtcMips.Checked = prefs.GetBoolean("ttcmips", true);
+        _ = textureDefault;
+
+        if (prefs.GetString("tree", null) is { Length: > 0 } treeText)
+        {
+            try
+            {
+                _outputTree = Uri.Parse(treeText);
+            }
+            catch (Exception)
+            {
+                _outputTree = null;
+            }
+        }
+
+        _tvOutput.Text = OutputLabel();
+        RenderFiles();
+    }
+
+    // ------------------------------------------------------------------ ui helpers
+
+    private void Log(string message) => RunOnUiThread(() =>
+    {
+        _tvLog.Text += message + "\n";
+        if (_scrollLog.ChildCount > 0)
+            _scrollLog.Post(() => _scrollLog.FullScroll(FocusSearchDirection.Down));
+    });
+
+    private void SetStatus(string text) => RunOnUiThread(() => _tvStatus.Text = text);
+
     // ------------------------------------------------------------------ headless test hook
 
-    /// <summary>Test hook: converts everything in files/in and writes files/out/result.txt.</summary>
     private async void RunAutoAsync()
     {
         string baseDir = GetExternalFilesDir(null)?.AbsolutePath ?? CacheDir!.AbsolutePath;
@@ -429,24 +923,24 @@ public class MainActivity : Activity
         }
         catch (Exception ex)
         {
-            Log("cannot list input files: " + ex.Message);
-            WriteResult("cannot list input files: " + ex.Message);
+            WriteResult("无法列出输入文件：" + ex.Message);
             return;
         }
 
-        Log($"autorun: {files.Count} file(s) in {inputDir}");
+        Log($"自动运行：{files.Count} 个文件（{inputDir}）");
         if (files.Count == 0)
         {
-            WriteResult("no input files");
+            WriteResult("没有输入文件");
             return;
         }
 
         var lines = new List<string>();
-        ConversionMode mode = SelectedMode(_modeSpinner.SelectedItemPosition);
+        ConversionMode mode = SelectedMode(_modes.SelectedIndex);
+        ConvertOptions options = BuildOptions();
+        string outDir = OutputDirectory();
+
         await Task.Run(() =>
         {
-            var options = new ConvertOptions { FlipExplicit = false, TtxFormat = TextureFormats.AutoDxt };
-            string outDir = OutputDirectory();
             foreach (string file in files)
             {
                 ConversionOutcome outcome = Converter.ConvertFile(file, null, mode, options);
@@ -455,12 +949,12 @@ public class MainActivity : Activity
                     string dest = Path.Combine(outDir, Path.GetFileName(outcome.Output));
                     File.Copy(outcome.Output, dest, overwrite: true);
                     lines.Add($"OK {Path.GetFileName(file)} -> {dest} | {outcome.Summary}");
-                    Log($"OK {Path.GetFileName(file)} -> {Path.GetFileName(dest)}");
+                    Log($"完成 {Path.GetFileName(file)} -> {Path.GetFileName(dest)}");
                 }
                 else
                 {
                     lines.Add($"FAIL {Path.GetFileName(file)}: {outcome.Error}");
-                    Log($"FAIL {Path.GetFileName(file)}: {outcome.Error}");
+                    Log($"失败 {Path.GetFileName(file)}：{outcome.Error}");
                 }
             }
         });
@@ -474,14 +968,102 @@ public class MainActivity : Activity
         {
             string path = Path.Combine(OutputDirectory(), "result.txt");
             File.WriteAllText(path, text);
-            Log("result written: " + path);
+            Log("结果已写入：" + path);
         }
         catch (Exception ex)
         {
-            Log("result write failed: " + ex.Message);
+            Log("结果写入失败：" + ex.Message);
         }
     }
+
+    // ------------------------------------------------------------------ pill control
+
+    private sealed class PillGroup
+    {
+        private readonly Activity _activity;
+        private readonly LinearLayout _host;
+        private readonly List<TextView> _pills = [];
+        private readonly bool[] _enabled;
+        private int _selected;
+
+        public PillGroup(Activity activity, LinearLayout host, string[] labels, int selected, Action<int> onChanged)
+        {
+            _activity = activity;
+            _host = host;
+            _enabled = new bool[labels.Length];
+            Array.Fill(_enabled, true);
+            for (int i = 0; i < labels.Length; i++)
+            {
+                int index = i;
+                var pill = new TextView(activity) { Text = labels[i], TextSize = 12.5f };
+                pill.Gravity = GravityFlags.Center;
+                pill.SetPadding(Dp(activity, 14), Dp(activity, 8), Dp(activity, 14), Dp(activity, 8));
+                pill.Clickable = true;
+                pill.Focusable = true;
+                var lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
+                lp.RightMargin = Dp(activity, 8);
+                pill.Click += (_, _) =>
+                {
+                    if (!_enabled[index]) return;
+                    SetSelected(index);
+                    onChanged(index);
+                };
+                host.AddView(pill, lp);
+                _pills.Add(pill);
+            }
+
+            SetSelected(selected);
+        }
+
+        public int SelectedIndex => _selected;
+        public int Count => _pills.Count;
+
+        public void SetSelected(int index)
+        {
+            if (index < 0 || index >= _pills.Count) return;
+            _selected = index;
+            for (int i = 0; i < _pills.Count; i++)
+            {
+                bool on = i == index;
+                _pills[i].SetBackgroundResource(on ? Resource.Drawable.bg_pill_on : Resource.Drawable.bg_pill_off);
+                _pills[i].SetTextColor(on ? Color.ParseColor("#00B8FF") : Color.ParseColor("#9AA4B2"));
+            }
+            ScrollToSelected();
+        }
+
+        // Keep the active pill inside the horizontal scroller (the row holds up to 8 modes).
+        private void ScrollToSelected()
+        {
+            if (_selected < 0 || _selected >= _pills.Count) return;
+            var pill = _pills[_selected];
+            if (_host.Parent is not HorizontalScrollView scroller)
+            {
+                _host.Post(() =>
+                {
+                    if (_host.Parent is HorizontalScrollView s) s.SmoothScrollTo(0, 0);
+                });
+                return;
+            }
+
+            pill.Post(() =>
+            {
+                int margin = Dp(_activity, 12);
+                int target = Math.Max(0, pill.Left - margin);
+                int max = Math.Max(0, _host.Width - scroller.Width);
+                scroller.SmoothScrollTo(Math.Min(target, max + margin), 0);
+            });
+        }
+
+        public void SetEnabled(int index, bool enabled)
+        {
+            if (index < 0 || index >= _pills.Count) return;
+            _enabled[index] = enabled;
+            _pills[index].Alpha = enabled ? 1f : 0.35f;
+            _pills[index].Clickable = enabled;
+        }
+
+        private static int Dp(Activity activity, int value) =>
+            (int)(value * (activity.Resources?.DisplayMetrics?.Density ?? 1f));
+    }
 }
-
-
-

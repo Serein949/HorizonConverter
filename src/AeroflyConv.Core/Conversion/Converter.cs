@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using AeroflyConv.Core.Media;
 using AeroflyConv.Core.Textures;
 using AeroflyConv.Core.Tm;
@@ -326,6 +326,17 @@ public static class Converter
         ex is UnauthorizedAccessException ||
         (ex is IOException && ex.Message.Contains("denied", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>True when any pixel is not fully opaque (used to pick DXT5 over DXT1).</summary>
+    private static bool HasAlpha(byte[] rgba, int w, int h)
+    {
+        for (int i = 3; i < w * h * 4; i += 4)
+        {
+            if (rgba[i] != 255) return true;
+        }
+        return false;
+    }
+
+
     private static string DescribeWriteError(Exception ex, string? output)
     {
         if (IsPermissionProblem(ex) && output is not null)
@@ -446,6 +457,7 @@ public static class Converter
         // choice overrides the slot size (e.g. 4096 for a sharper livery).
         int targetW = 0, targetH = 0;
         string? targetFormat = null;
+        string? slotFormat = null;
 
         if (options.TargetTextureSize is int forced && forced >= 32)
         {
@@ -461,7 +473,9 @@ public static class Converter
                 {
                     targetW = existing.Width;
                     targetH = existing.Height;
-                    if (TextureFormats.IsSupportedDecode(existing.Format))
+                    slotFormat = existing.Format;
+                    // Only adopt formats we can write; BC5 normal maps and ASTC are read-only here.
+                    if (TextureFormats.Encodable.ContainsKey(TextureFormats.Canonical(existing.Format)))
                         targetFormat = existing.Format;
                 }
             }
@@ -489,11 +503,17 @@ public static class Converter
         }
 
         string format = targetFormat ?? options.TtxFormat;
+
         if (targetFormat is not null &&
             TextureFormats.Canonical(options.TtxFormat) != targetFormat &&
             options.TtxFormat != TextureFormats.AutoDxt)
         {
             log?.Invoke($"using the existing slot format ({targetFormat})");
+        }
+        else if (targetFormat is null && slotFormat is not null)
+        {
+            log?.Invoke($"slot uses {slotFormat}, which this build can read but not write - " +
+                        $"writing {TextureFormats.Canonical(format)} instead");
         }
 
         log?.Invoke($"Encoding {format} ...");

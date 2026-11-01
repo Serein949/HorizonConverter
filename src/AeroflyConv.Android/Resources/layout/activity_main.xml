@@ -1,0 +1,479 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootScroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0B0E14"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingTop="22dp"
+        android:paddingBottom="24dp">
+
+        <!-- header -->
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Aerofly 转换器"
+            android:textColor="#F8FAFD"
+            android:textSize="26sp"
+            android:fontFamily="sans-serif-medium" />
+
+        <TextView
+            android:id="@+id/tvSubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="TTX · TSB · TTC · TM —— 纯 C# 实现"
+            android:textColor="#7C8797"
+            android:textSize="12sp" />
+
+        <!-- mode -->
+        <LinearLayout
+            android:id="@+id/cardMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="14dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="模式"
+                android:textColor="#7C8797"
+                android:textSize="11sp"
+                android:letterSpacing="0.12" />
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/llModes"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+        </LinearLayout>
+
+        <!-- files -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="14dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="文件"
+                    android:textColor="#7C8797"
+                    android:textSize="11sp"
+                    android:letterSpacing="0.12" />
+
+                <TextView
+                    android:id="@+id/tvFileCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textColor="#00B8FF"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/llFiles"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/tvEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="6dp"
+                android:gravity="center"
+                android:text="还没有文件\n添加 .ttx / .tsb / .ttc / .tm / .png / .wav"
+                android:textColor="#5C6779"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnAddFiles"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_ghost"
+                    android:text="添加文件"
+                    android:textAllCaps="false"
+                    android:textColor="#F8FAFD"
+                    android:textSize="14sp"
+                    android:stateListAnimator="@null" />
+
+                <Button
+                    android:id="@+id/btnAddFolder"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_marginLeft="8dp"
+                    android:layout_weight="1.1"
+                    android:background="@drawable/bg_ghost"
+                    android:text="添加文件夹"
+                    android:textAllCaps="false"
+                    android:textColor="#F8FAFD"
+                    android:textSize="14sp"
+                    android:stateListAnimator="@null" />
+
+                <Button
+                    android:id="@+id/btnClear"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_marginLeft="8dp"
+                    android:layout_weight="0.7"
+                    android:background="@drawable/bg_ghost"
+                    android:text="清空"
+                    android:textAllCaps="false"
+                    android:textColor="#9AA4B2"
+                    android:textSize="14sp"
+                    android:stateListAnimator="@null" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- options -->
+        <LinearLayout
+            android:id="@+id/cardOptions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="14dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="选项"
+                android:textColor="#7C8797"
+                android:textSize="11sp"
+                android:letterSpacing="0.12" />
+
+            <LinearLayout
+                android:id="@+id/rowFormat"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/lblFormat"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="格式"
+                    android:textColor="#C6CEDA"
+                    android:textSize="13sp" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/llFormat"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rowSize"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="贴图尺寸"
+                    android:textColor="#C6CEDA"
+                    android:textSize="13sp" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/llSize"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rowFlip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="垂直翻转"
+                        android:textColor="#C6CEDA"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Aerofly 贴图行序自下而上"
+                        android:textColor="#5C6779"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swFlip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rowCompress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="压缩 TTX（LZHAM）"
+                        android:textColor="#C6CEDA"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="与游戏内文件相同的容器"
+                        android:textColor="#5C6779"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <Switch
+                    android:id="@+id/swCompress"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rowTtcMips"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="TTC 多级贴图"
+                    android:textColor="#C6CEDA"
+                    android:textSize="13sp" />
+
+                <Switch
+                    android:id="@+id/swTtcMips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- output -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="14dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="输出"
+                android:textColor="#7C8797"
+                android:textSize="11sp"
+                android:letterSpacing="0.12" />
+
+            <TextView
+                android:id="@+id/tvOutput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Download/AeroflyConv"
+                android:textColor="#C6CEDA"
+                android:textSize="12sp"
+                android:fontFamily="monospace" />
+
+            <Button
+                android:id="@+id/btnPickOutput"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_ghost"
+                android:text="更改输出文件夹"
+                android:textAllCaps="false"
+                android:textColor="#F8FAFD"
+                android:textSize="14sp"
+                android:stateListAnimator="@null" />
+        </LinearLayout>
+
+        <!-- convert -->
+        <Button
+            android:id="@+id/btnConvert"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_primary"
+            android:text="开始转换"
+            android:textAllCaps="false"
+            android:textColor="#04121A"
+            android:textSize="17sp"
+            android:fontFamily="sans-serif-medium"
+            android:stateListAnimator="@null" />
+
+        <ProgressBar
+            android:id="@+id/progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="12dp"
+            android:max="100"
+            android:progress="0"
+            android:progressTint="#00B8FF"
+            android:progressBackgroundTint="#1B2230"
+            android:visibility="invisible" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="就绪"
+            android:textColor="#7C8797"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:id="@+id/rowResultActions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btnOpen"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_ghost"
+                android:text="打开结果"
+                android:textAllCaps="false"
+                android:textColor="#F8FAFD"
+                android:textSize="14sp"
+                android:stateListAnimator="@null" />
+
+            <Button
+                android:id="@+id/btnShare"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_marginLeft="8dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_ghost"
+                android:text="分享"
+                android:textAllCaps="false"
+                android:textColor="#F8FAFD"
+                android:textSize="14sp"
+                android:stateListAnimator="@null" />
+        </LinearLayout>
+
+        <!-- log -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="日志"
+                android:textColor="#7C8797"
+                android:textSize="11sp"
+                android:letterSpacing="0.12" />
+
+            <ScrollView
+                android:id="@+id/scrollLog"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:layout_marginTop="6dp"
+                android:scrollbars="vertical">
+
+                <TextView
+                    android:id="@+id/tvLog"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#8FD6B0"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace"
+                    android:textIsSelectable="true" />
+            </ScrollView>
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

@@ -114,6 +114,9 @@ AeroflyConv some.ttx --info
 * **音频**：NLayer（MP3）、NVorbis（OGG）、FlacBox（FLAC），全部纯托管。
 * **并行**：文件级并行；单文件内部按顺序处理。
 
+> 贴图格式（DXT1 / DXT5 / ETC2 / R8 / BC5 / ASTC）的区别、体积、画质实测和选择建议，
+> 见 [`docs/formats.md`](docs/formats.md)。
+
 ---
 
 ## 5. 验证
@@ -165,9 +168,9 @@ docs/screenshot.png        GUI 截图
 
 ---
 
-## 8. �������⣺����һ��������ˣ�NahimicOSD.dll��
+## 8. 常见问题：运行一会儿后闪退（NahimicOSD.dll）
 
-Windows �¼���־�����������
+Windows 事件日志里如果看到：
 
 ```
 Faulting application name: AeroflyConv.exe
@@ -175,115 +178,115 @@ Faulting module name: NahimicOSD.dll, version: 2.2.25.0
 Exception code: 0xc0000005
 ```
 
-�ⲻ�Ǳ���������⣺Dell / Alienware �����ϵ� **Alienware Sound Center��Nahimic��** ���
-`NahimicOSD.dll` ע�뵽ÿ�����̣������ģ������֪�ı���ȱ�ݣ�ԭ�� 0xC0000005����
+这不是本程序的问题：Dell / Alienware 机器上的 **Alienware Sound Center（Nahimic）** 会把
+`NahimicOSD.dll` 注入到每个进程，而这个模块有已知的崩溃缺陷（原生 0xC0000005）。
 
-�����취����ѡ��һ����
+处理办法（任选其一）：
 
-1. ˫������Ŀ¼��� `NahimicOSD-ֹͣ.cmd`�����������ԱȨ�ޣ��������� AeroflyConv��
-   ��Ҫ��ԭʱ���� `NahimicOSD-�ָ�.cmd`��
-2. `services.msc` �� �ҵ� `NahimicService` �� ֹͣ�������������͸ĳɡ����á���������Ч����
-3. �� Alienware Sound Center / Nahimic ��ر� OSD / ����׷����ĵ��㹦�ܡ�
-4. ֻ�������а棨`dist\cli\AeroflyConv.exe`�������������������ڣ��������ױ� OSD ������
+1. 双击程序目录里的 `NahimicOSD-停止.cmd`（会请求管理员权限），再启动 AeroflyConv；
+   需要还原时运行 `NahimicOSD-恢复.cmd`。
+2. `services.msc` → 找到 `NahimicService` → 停止，并把启动类型改成「禁用」（永久生效）。
+3. 在 Alienware Sound Center / Nahimic 里关闭 OSD / 声音追踪类的叠层功能。
+4. 只用命令行版（`dist\cli\AeroflyConv.exe`）批处理，它不开窗口，更不容易被 OSD 碰到。
 
-��������ʱ�����⵽�� DLL ��ע�룬������־�������ɫ���沢������ʾ��
+程序启动时如果检测到该 DLL 已注入，会在日志里给出红色警告并弹窗提示。
 
 ---
 
-## 9. �������⣺`Access to the path ... is denied`
+## 9. 常见问题：`Access to the path ... is denied`
 
-ת�����Ĭ��д��Դ�ļ��Աߡ���Ϸ��װĿ¼��`...\SteamLibrary\steamapps\common\Aerofly FS 4 ...`��
-һ�㲻������ͨ�û�д�룬���ԻᱨȨ�޴������ֽ���취��
+转换结果默认写在源文件旁边。游戏安装目录（`...\SteamLibrary\steamapps\common\Aerofly FS 4 ...`）
+一般不允许普通用户写入，所以会报权限错误。三种解决办法：
 
-1. **GUI**��`Options �� Output` ѡһ����дĿ¼����дĿ¼����ļ��нṹ�ᰴ���뾵�񣩣�
-   �Ҳ� `?` �ָ�"д��Դ�ļ��Ա�"��
-2. **CLI**��`-d/--outdir`
+1. **GUI**：`Options → Output` 选一个可写目录（可写目录里的文件夹结构会按输入镜像），
+   右侧 `?` 恢复"写在源文件旁边"。
+2. **CLI**：`-d/--outdir`
 
    ```powershell
    AeroflyConv "E:\SteamLibrary\steamapps\common\Aerofly FS 4 Flight Simulator\aircraft\a350_1000" -d D:\AeroflyPNG -j 16
    ```
 
-3. **ʲô������**��������Զ���д�� `Documents\AeroflyConv-out`����Ҳ����д�����γ���
-   `%LOCALAPPDATA%\AeroflyConv\out`����ʱĿ¼��exe ͬĿ¼ `out\`������־���ע��ʵ��λ�á�
+3. **什么都不做**：程序会自动改写到 `Documents\AeroflyConv-out`（若也不可写则依次尝试
+   `%LOCALAPPDATA%\AeroflyConv\out`、临时目录、exe 同目录 `out\`），日志里会注明实际位置。
 
-���� "auto" ģʽ��ɨ���ļ���ʱֻ������֪��������չ����`.ttx .tsb .wav .mp3 .flac .ogg .ttc
-.toc .tsc .wad .tmb .tsl .zip .tme` ��ͼƬ���������ٶ� `.json`��`.cfg` ֮����ļ���"�޷�ʶ��"��
-
----
-
-## 10. ��ͼ������"��ɫ����"
-
-* **���µߵ�**��Aerofly �� TTX ��ͼ�����¶��ϵ�˳��洢������ PNG ʱĬ��**�Ѿ���ת**��
-  ���Դ򿪾��������ģ�GUI �� `Flip vertically (Aerofly stores textures bottom-up)` Ĭ�Ϲ�ѡ��
-  �����п��� `--no-flip` �رգ���д�� TTX ʱҲĬ�Ϸ�ת�����"�������༭������"�ܶ��ϡ�
-* **ĳ��������ʾΪ����**������ **alpha = 0 ��͸������**����Ƭ�鿴�����͸�����ɺ�ɫ
-  ��A350 �� 276 �� RGBA ������� 183 �ŵײ�����ȫ͸����������ͼ���������ݣ���
-  �� Photoshop / GIMP / ֧��͸��ͨ���Ĳ鿴���򿪾���͸���ġ�ת����־�����ڻ���ʾ
-  "x% of the pixels are transparent (alpha=0)"��
-
-## 11. �û�Ŀ¼���Ϳװ TTX��ԭ������˵����֣�
-
-`Documents\Aerofly FS 4\aircraft\...` �������Ϳװ `.ttx` �õ�����һ�����ͷ��
-ǰ `0x40` �ֽ��� `0x5A` ������ magic Ϊ `a5 a4 24 c7 b7 3c eb b7`��
-ԭ�� Python ���߻�ֱ�ӱ� "not a TTX texture container"��������ʶ�𲢽��
-�����������ͨ�� LZHAM `compress_file` ��������ʵ������� `Documents\Aerofly FS 4\aircraft`
-Ŀ¼�����Ϻ� A330 ��Ϳװ��25 ���ļ� 3.8 ��ת����ɡ�
+另外 "auto" 模式在扫描文件夹时只处理已知的输入扩展名（`.ttx .tsb .wav .mp3 .flac .ogg .ttc
+.toc .tsc .wad .tmb .tsl .zip .tme` 和图片），不会再对 `.json`、`.cfg` 之类的文件报"无法识别"。
 
 ---
 
-## 12. ��ͼ�ߴ� / ����ԭ��ͼ����Ҫ��
+## 10. 贴图方向与"黑色区域"
 
-��Ϸ���ÿ����ͼ"��λ"���й̶��ߴ�͸�ʽ��A350 ���� `ext01_fuselage_color.ttx` ��
-**2048��2048 / DXT1 / 12 �� mip**�������д��ȥ�� TTX �ߴ粻�ԣ����� 6136��6132��
-�� 2 ���ݡ�13 �� mip������Ϸ�����ͻ��λ/����ʧ�ܡ�������Ϊ������������ڡ����ֲ�����
-������"���µߵ�"��
+* **上下颠倒**：Aerofly 的 TTX 贴图按自下而上的顺序存储。导出 PNG 时默认**已经翻转**，
+  所以打开就是正立的（GUI 里 `Flip vertically (Aerofly stores textures bottom-up)` 默认勾选，
+  命令行可用 `--no-flip` 关闭）。写回 TTX 时也默认翻转，因此"导出→编辑→导入"能对上。
+* **某个区域显示为纯黑**：那是 **alpha = 0 的透明像素**，照片查看器会把透明画成黑色
+  （A350 的 276 张 RGBA 输出里有 183 张底部带完全透明，属于贴图本身的内容）。
+  用 Photoshop / GIMP / 支持透明通道的查看器打开就是透明的。转换日志里现在会提示
+  "x% of the pixels are transparent (alpha=0)"。
 
-v1.1 �Զ�������
+## 11. 用户目录里的涂装 TTX（原版读不了的那种）
 
-* **�����Ѵ��ڵ� .ttx ʱ**����ȡ����ͼԭ�еĿ��ߺ� GPU ��ʽ����Դͼ����/ת��һ�µ�
-  ��`--no-fit` �ɹرգ���
-* **Ŀ�겻����ʱ**���� 2 ���ݵ�ͼƬ�Զ���������� 2 ���ݣ��� 6136��6132 �� 4096��4096����
-* ���������ƽ������С��/ ˫���ԣ��Ŵ󣩣�GIMP/PS ֮�ⲻ��Ҫ�Լ��ȸĳߴ硣
+`Documents\Aerofly FS 4\aircraft\...` 里的自制涂装 `.ttx` 用的是另一种外层头：
+前 `0x40` 字节与 `0x5A` 异或，外层 magic 为 `a5 a4 24 c7 b7 3c eb b7`。
+原版 Python 工具会直接报 "not a TTX texture container"，本版已识别并解出
+（解完就是普通的 LZHAM `compress_file` 容器）。实测把整个 `Documents\Aerofly FS 4\aircraft`
+目录（含南航 A330 等涂装）25 个文件 3.8 秒转换完成。
 
-ʵ�⣺��ԭ��ͼ������ PNG ��ԭ��д�أ��ߴ�/��ʽ/mip ����ԭ�ļ�һ�£����� PSNR 46.8 dB��
-���ļ������� IPACS ԭ�����Ϊ LZHAM д���� raw block����Ӱ���ȡ����
+---
 
-### ����ߴ���ôѡ
+## 12. 贴图尺寸 / 覆盖原贴图（重要）
 
-����������ͼʱĬ�� **Match original**����ԭ��λһ�£��ȫ������Ҫ����������ѡ����ߴ磺
+游戏里的每个贴图"槽位"都有固定尺寸和格式（A350 机身 `ext01_fuselage_color.ttx` 是
+**2048×2048 / DXT1 / 12 级 mip**）。如果写进去的 TTX 尺寸不对（例如 6136×6132、
+非 2 次幂、13 级 mip），游戏采样就会错位/加载失败——表现为机身大面积发黑、出现补丁、
+看起来"上下颠倒"。
 
-| ѡ�� | �����Դͼ 6136��6132�� | ˵�� |
+v1.1 自动处理：
+
+* **覆盖已存在的 .ttx 时**：读取该贴图原有的宽高和 GPU 格式，把源图缩放/转成一致的
+  （`--no-fit` 可关闭）。
+* **目标不存在时**：非 2 次幂的图片自动缩到最近的 2 次幂（如 6136×6132 → 4096×4096）。
+* 缩放用面积平均（缩小）/ 双线性（放大），GIMP/PS 之外不需要自己先改尺寸。
+
+实测：把原贴图导出成 PNG 再原样写回，尺寸/格式/mip 数与原文件一致，往返 PSNR 46.8 dB。
+（文件体积会比 IPACS 原版大，因为 LZHAM 写的是 raw block，不影响读取。）
+
+### 输出尺寸怎么选
+
+覆盖已有贴图时默认 **Match original**（和原槽位一致，最安全）。想要更清晰可以选更大尺寸：
+
+| 选项 | 结果（源图 6136×6132） | 说明 |
 |---|---|---|
-| Match original | 2048��2048 / 12 mips��2.7 MB | ��ԭ���λ��ȫһ�� |
-| 4096 px | 4096��4096 / 13 mips��10.7 MB | �� 2048 ��������ϸ�ڣ��Ƽ� |
-| 2048 px | 2048��2048 | ǿ�ƽ����� |
-| 8192 px | 8192��8192 / 14 mips��42.7 MB | �ѳ���Դͼ�ֱ��ʣ�ֻ�ǷŴ󣬲�����ϸ�� |
-| Source (max PO2) | 4096��4096 | ȡ������Դͼ�� 2 ���� |
+| Match original | 2048×2048 / 12 mips，2.7 MB | 与原版槽位完全一致 |
+| 4096 px | 4096×4096 / 13 mips，10.7 MB | 比 2048 保留更多细节，推荐 |
+| 2048 px | 2048×2048 | 强制降采样 |
+| 8192 px | 8192×8192 / 14 mips，42.7 MB | 已超过源图分辨率，只是放大，不增加细节 |
+| Source (max PO2) | 4096×4096 | 取不超过源图的 2 次幂 |
 
-�����У�`--size 4096`���Դ�/����ʱ�����������������40962 ԼΪ 20482 �� 4 ����
-81922 ���� 40962 �� 4 ����DXT1 ����Լ 11 MB �� 43 MB���� mip����
+命令行：`--size 4096`。显存/加载时间随面积线性增长：40962 约为 20482 的 4 倍，
+81922 又是 40962 的 4 倍（DXT1 单张约 11 MB → 43 MB，含 mip）。
 
 ---
 
-## 13. ȥ����Windows �ѱ�����ĵ��� / ��Ҫ���С�
+## 13. 去掉「Windows 已保护你的电脑 / 仍要运行」
 
-���� SmartScreen ��**δǩ������**����ʾ�����ֿ��ṩһ��һ�������ű�����ǰ�û�֤�飬����Ҫ����Ա����
+这是 SmartScreen 对**未签名程序**的提示。本仓库提供一个一键处理脚本（当前用户证书，不需要管理员）：
 
 ```powershell
-# �ȹر� AeroflyConv��ǩ����Ҫд�ļ���
+# 先关闭 AeroflyConv（签名需要写文件）
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/sign-app.ps1
-# ���ڷ���Ŀ¼��˫����ǩ��-ȥ����ȫ��ʾ.cmd
+# 或在发布目录里双击：签名-去除安全提示.cmd
 ```
 
-���᣺
+它会：
 
-1. ������ǩ����ǩ��֤�� `CN=AeroflyConv Local Publishing`����ǰ�û���5 �꣩��
-2. �Ѹ�֤�鵼�� `��ǰ�û�\�����εĸ�֤��䷢����` �� `�����εķ�����`��
-3. ������ `AeroflyConv.exe` ǩ����SHA-256����
+1. 创建自签代码签名证书 `CN=AeroflyConv Local Publishing`（当前用户，5 年）；
+2. 把该证书导入 `当前用户\受信任的根证书颁发机构` 与 `受信任的发布者`；
+3. 给所有 `AeroflyConv.exe` 签名（SHA-256）。
 
-֮��˫�� exe ���ٵ�"��Ҫ����"��`build.ps1` �������Զ���������ǩ��֤�����ʱ����
+之后双击 exe 不再弹"仍要运行"。`build.ps1` 发布会自动调用它（签名证书存在时）。
 
-������ɾ��������֤�飩��
+撤销（删除信任与证书）：
 
 ```powershell
 certutil -delstore -user Root 583EEC3674E239898741C9809B2EF06E96F7E748
@@ -293,65 +296,74 @@ Remove-Item Cert:\CurrentUser\My\583EEC3674E239898741C9809B2EF06E96F7E748
 
 ---
 
-## 14. ��׿ / ����ƽ̨
+## 14. 安卓 / 其他平台
 
-**���Ŀ��ǿ���ֲ��**��`AeroflyConv.Core` 6501 �С���ƽ̨ API��û�� System.Drawing / DllImport /
-Win32���������� ImageSharp / NLayer / NVorbis Ҳ���ǿ�ƽ̨�ġ�
+**核心库是可移植的**：`AeroflyConv.Core` 6501 行、零平台 API（没有 System.Drawing / DllImport /
+Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
 
-�Ѿ���֤����ط�ʽ��
+已经验证的落地方式：
 
-| ��ʽ | ״̬ | ���� |
+| 方式 | 状态 | 命令 |
 |---|---|---|
-| Linux / Android(Termux) ������ | ? �ѹ������� | `dotnet publish -r linux-arm64 --self-contained` �� `dist/AeroflyConv-android-termux-arm64.zip` |
-| .NET for Android ԭ��С App | �������� Android SDK�� | ���� Core��SAF �ļ�ѡ�� + ���� + ���浽 Download |
-| MAUI ��ƽ̨ GUI | �������� `maui-android` workload�� | ��������д |
+| Linux / Android(Termux) 命令行 | ? 已构建可用 | `dotnet publish -r linux-arm64 --self-contained` → `dist/AeroflyConv-android-termux-arm64.zip` |
+| .NET for Android 原生小 App | 待做（需 Android SDK） | 复用 Core，SAF 文件选择 + 进度 + 保存到 Download |
+| MAUI 跨平台 GUI | 待做（需 `maui-android` workload） | 界面需重写 |
 
-�� Android ����֮ǰҪ֪���������£�
+在 Android 上用之前要知道的两件事：
 
-1. **�洢����**��Android 11+ �� `Android/data/<����>/` ������ App��Termux Ҳ�㣩���ɶ���
-   ��� Aerofly FS Global �����������Ŀ¼�������� root / Shizuku������ļ����Ƶ�
-   `Download` ���ñ����ߴ�����
-2. **ASTC**�������ƶ��豸�� ASTC ��ͼ������Ŀֻ֧�� ETC2/ETC1�����룩+ ETC2�����룩��
-   ���� ASTC ����ȷ������Ҫ����֧���ƶ�����Ҫ��һ�� ASTC ��������
+1. **存储限制**：Android 11+ 里 `Android/data/<包名>/` 对其他 App（Termux 也算）不可读。
+   如果 Aerofly FS Global 的内容在这个目录，必须先 root / Shizuku，或把文件复制到
+   `Download` 再用本工具处理。
+2. **ASTC**：部分移动设备用 ASTC 贴图，本项目只支持 ETC2/ETC1（解码）+ ETC2（编码），
+   遇到 ASTC 会明确报错。要完整支持移动端需要补一个 ASTC 解码器。
 
 ---
 
-## 15. ��׿ App��ʵ����ã�+ �ƶ��� ASTC ֧��
+## 15. 安卓 App（实测可用）+ 移动版 ASTC 支持
 
-### 15.1 Android Ӧ��
+### 15.1 Android 应用
 
-`src/AeroflyConv.Android` ��һ�� .NET for Android ԭ��Ӧ�ã����� MAUI����������д View����
-APK �� `dist/v1.1/android/AeroflyConv-1.1.apk`��11 MB��minSdk 24 / target 36����
+`src/AeroflyConv.Android` 是一个 .NET for Android 原生应用（不是 MAUI，界面用 XML 布局），
+APK 在 `dist/v1.2/android/AeroflyConv-1.2.apk`（minSdk 24 / target 36）。
 
-��װ��`adb install -r AeroflyConv-1.1.apk`���򿽵��ֻ������ļ������������װ��
+安装：`adb install -r AeroflyConv-1.2.apk`，或拷到手机后用文件管理器点击安装。
 
-ʹ�ã�ѡģʽ �� `Select files`��ϵͳ�ļ�ѡ�������ɶ�ѡ���� `Convert` �� ���д��
-`Download/AeroflyConv/`��Ҳ������Ӧ��˽��Ŀ¼
-`Android/data/com.aeroflyconv.app/files/in` ����ļ���Ӧ������ʱ�ᴴ����Ŀ¼
-������ adb / USB ����Ͷ�ţ���
+**v1.2 的界面（全中文）**：
 
-**ʵ����֤��vivo V2304A / Android 16 / arm64��**��
+* 顶部**模式**药丸：自动识别 / TTX→PNG / PNG→TTX / TSB→WAV / WAV→TSB / TM→TXT / TTC→PNG / PNG→TTC；
+* **文件**卡片：`添加文件`（可多选）、`添加文件夹`（递归扫描）、`清空`，逐个文件可点 ✕ 移除；
+* **选项**卡片（按模式自动显示）：格式（自动 / DXT1 / DXT5 / ETC2 / R8）、贴图尺寸
+  （匹配原尺寸 / 4096 / 2048 / 1024 / 源尺寸）、垂直翻转、压缩 TTX（LZHAM）、TTC 多级贴图；
+* **输出**卡片：默认 `Download/AeroflyConv`，可改成任意文件夹（SAF 授权，重启后保留）；
+* 转换后出现 `打开结果` / `分享`；
+* 所有设置存 `SharedPreferences`，下次启动沿用。
 
-| ת�� | ��� |
+也可以在应用私有目录 `Android/data/com.aeroflyconv.app/files/in` 里放文件（方便 adb 批量投放），
+用 `am start ... --ez autorun true --es mode png2ttx --es format etc2` 无界面跑批（测试用）。
+
+**实机验证（vivo V2304A / Android 16 / arm64）**：
+
+| 转换 | 结果 |
 |---|---|
-| TTX (DXT5 10242) �� PNG | �������**������һ��** |
-| TTX (BC5 ���� 20482) �� PNG | �������**������һ��** |
-| TSB �� WAV | �������**���ֽ�һ��** |
-| PNG �� TTX (DXT1, 256��128, 9 mips) | �������**���ֽ�һ��** |
+| TTX (DXT5 1024²) → PNG | 与桌面版**逐像素一致** |
+| TTX (BC5 法线 2048²) → PNG | 与桌面版**逐像素一致** |
+| TSB → WAV | 与桌面版**逐字节一致** |
+| PNG → TTX (DXT1, 256×128, 9 mips) | 与桌面版**逐字节一致** |
+| PNG → TTX (ETC2, 512² 与 2048²) | 正常编码，`type_rgb_etc2` |
 
-��������ֻ��湲��ͬһ�� `AeroflyConv.Core`��������Ϊ��ȫһ�£�PNG ѹ���ֽڿ�����
-zlib ʵ�ֲ�ͬ�����в��죬���ز��䣩��
+桌面版与手机版共用同一份 `AeroflyConv.Core`，所以行为完全一致（PNG 压缩字节可能因
+zlib 实现不同而略有差异，像素不变）。
 
-### 15.2 ASTC��Aerofly FS Global / �ֻ�����ͼ��
+### 15.2 ASTC（Aerofly FS Global / 手机版贴图）
 
-�ֻ������ͼ�� `type_rgb_astc_6x6` / `type_rgba_astc_5x5`�������� LZHAM ���������ͬ����
-��������**�� C# �� ASTC LDR ������**��`Codecs/AstcCodec.cs`����
+手机版的贴图是 `type_rgb_astc_6x6` / `type_rgba_astc_5x5`（容器和 LZHAM 与桌面版相同）。
+本版新增**纯 C# 的 ASTC LDR 解码器**（`Codecs/AstcCodec.cs`）：
 
-* ֧�� 4��4 �� 12��12 ȫ����ߴ硢1�C4 partition��dual-plane��ȫ�� CEM��void-extent��FP16 �˵㣻
-* ���ֻ� DLC ��� **85 ����ʵ ASTC ��ͼ**���ع飨`tests/vectors/astc`������ٷ�������
-  `texture2ddecoder` **���ֽ�һ��**��
-* �������� �� **249 MB/s**��2048��2048 6��6 ���� 60�C130 ms����
-* `tools/AstcCheck` �ɵ��������׻ع顣
+* 支持 4×4 … 12×12 全部块尺寸、1–4 partition、dual-plane、全部 CEM、void-extent、FP16 端点；
+* 用手机 DLC 里的 **85 个真实 ASTC 贴图**做回归（`tests/vectors/astc`），与官方解码器
+  `texture2ddecoder` **逐字节一致**；
+* 桌面吞吐 ≈ **249 MB/s**（2048×2048 6×6 单张 60–130 ms）；
+* `tools/AstcCheck` 可单独跑这套回归。
 
-Ҳ����˵��**�ֻ������ͼ���ڿ����ڵ�����ת�� PNG ��**��д���ƶ�����Ȼֻ֧�� ETC2
-������ ASTC ���롪������Ҫ����һ������ ASTC ����������
+也就是说：**手机版的贴图现在可以在电脑上转成 PNG 了**。写回移动版仍然只支持 ETC2
+（不做 ASTC 编码——那需要内置一个完整 ASTC 编码器）。
