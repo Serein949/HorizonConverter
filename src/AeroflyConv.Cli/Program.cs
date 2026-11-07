@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using AeroflyConv.Core;
 using AeroflyConv.Core.Conversion;
@@ -11,6 +11,9 @@ internal static class Program
     private static int Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+        if (args.Length > 0 && args[0] is "xplane" or "xp")
+            return XPlane.Run(args.AsSpan(1));
 
         if (args.Length == 0 || args.Any(a => a is "-h" or "--help" or "help"))
         {
@@ -252,7 +255,9 @@ internal static class Program
                                       SteamLibrary game directory.
               -f, --format <fmt>      TTX target format (default dxt_auto):
                                       dxt_auto, dxt1, dxt5, type_rgba, type_r,
-                                      etc2, type_rgba_etc2
+                                      etc2, type_rgba_etc2,
+                                      astc6x6, astc5x5, type_rgba_astc_6x6,
+                                      type_rgb_astc_6x6, astc_auto
                   --ttc-format <f>    TTC target format: dxt1 (default), dxt5, etc2, r8
                   --flip/--no-flip    flip textures vertically (default: on for texture modes,
                                       Aerofly stores textures bottom-up)

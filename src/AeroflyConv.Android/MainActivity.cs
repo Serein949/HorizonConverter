@@ -5,6 +5,8 @@ using Android.Graphics;
 using Android.OS;
 using Android.Provider;
 using Android.Text;
+using Android.Text.Style;
+using ClipboardManager = Android.Content.ClipboardManager;
 using Android.Views;
 using Android.Widget;
 using AeroflyConv.Core;
@@ -16,10 +18,23 @@ using AndroidResource = Android.Resource;
 
 namespace AeroflyConv.Android;
 
-[Activity(Label = "Aerofly 转换器", MainLauncher = true, Theme = "@android:style/Theme.Material.NoActionBar")]
+[Activity(Label = MainActivity.AppLabel, MainLauncher = true, Theme = "@android:style/Theme.Material.NoActionBar")]
 public class MainActivity : Activity
 {
     private const int RequestPickFiles = 1001;
+#if PUBLIC_BUILD
+    /// <summary>Window and launcher label; the public build drops the Alpha tag.</summary>
+    public const string AppLabel = "Aerofly 转换器";
+
+    private const bool IsPublicBuild = true;
+    private const string ProductLabel = "Aerofly 转换器 v1.0";
+#else
+    public const string AppLabel = "Aerofly 转换器 Alpha";
+
+    private const bool IsPublicBuild = false;
+    private const string ProductLabel = "Aerofly 转换器 Alpha v1.2.0";
+#endif
+
     private const int RequestPickFolder = 1002;
     private const int RequestPickOutput = 1003;
     private const string Prefs = "aeroflyconv";
@@ -54,6 +69,17 @@ public class MainActivity : Activity
         "把 PNG 编码成 .ttc 地景贴图。",
     ];
 
+    /// <summary>Indexes into <see cref="ModeLabels"/> that this build offers.</summary>
+    private static readonly int[] VisibleModeIndexes =
+#if PUBLIC_BUILD
+        [2, 4];
+#else
+        [0, 1, 2, 3, 4, 5, 6, 7];
+#endif
+
+    /// <summary>Mode list entry for the current pill selection.</summary>
+    private int RealMode => VisibleModeIndexes[Math.Clamp(_modes.SelectedIndex, 0, VisibleModeIndexes.Length - 1)];
+
     private readonly List<Picked> _picked = [];
     private readonly List<ResultItem> _results = [];
 
@@ -69,6 +95,9 @@ public class MainActivity : Activity
     private TextView _tvEmpty = null!;
     private TextView _tvStatus = null!;
     private TextView _tvLog = null!;
+    private TextView _tvLogCount = null!;
+    private readonly System.Text.StringBuilder _logText = new();
+    private int _logCount;
     private TextView _tvOutput = null!;
     private ProgressBar _progress = null!;
     private Switch _swFlip = null!;
@@ -81,9 +110,9 @@ public class MainActivity : Activity
     private PillGroup _formats = null!;
     private PillGroup _sizes = null!;
 
-    private static readonly string[] FormatLabels = ["自动", "DXT1", "DXT5", "ETC2", "R8"];
-    private static readonly string[] TTXFormats = ["dxt_auto", "dxt1", "dxt5", "etc2", "r8"];
-    private static readonly string[] TtcFormats = ["dxt1", "dxt1", "dxt5", "etc2", "r8"];
+    private static readonly string[] FormatLabels = ["自动", "DXT1", "DXT5", "ETC2", "R8", "ASTC 6x6", "ASTC 5x5"];
+    private static readonly string[] TTXFormats = ["dxt_auto", "dxt1", "dxt5", "etc2", "r8", "astc6x6", "astc5x5"];
+    private static readonly string[] TtcFormats = ["dxt1", "dxt1", "dxt5", "etc2", "r8", "dxt1", "dxt1"];
     private static readonly string[] SizeLabels = ["匹配原尺寸", "4096", "2048", "1024", "源尺寸"];
     private static readonly int?[] SizeValues = [null, 4096, 2048, 1024, null];
 
@@ -91,12 +120,16 @@ public class MainActivity : Activity
     private bool _busy;
     private CancellationTokenSource? _cts;
 
-    private sealed record Picked(string LocalPath, string DisplayName);
+    private sealed record Picked(string LocalPath, string DisplayName)
+    {
+        public TextView? RowStatus { get; set; }
+    }
     private sealed record ResultItem(string DisplayName, string Where, Uri? Uri);
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        Title = ProductLabel;
         Window?.SetStatusBarColor(Bg);
         Window?.SetNavigationBarColor(Bg);
 
@@ -116,7 +149,7 @@ public class MainActivity : Activity
             Log("无法创建目录：" + ex.Message);
         }
 
-        Log("就绪 · 输出：" + OutputLabel());
+        Log("就绪 · " + ProductLabel + " · " + ModeLabels[RealMode] + " · 输出：" + OutputLabel());
         UpdateModeUi();
 
         if (Intent?.GetBooleanExtra("autorun", false) == true)
@@ -169,6 +202,9 @@ public class MainActivity : Activity
         _tvEmpty = FindViewById<TextView>(Resource.Id.tvEmpty)!;
         _tvStatus = FindViewById<TextView>(Resource.Id.tvStatus)!;
         _tvLog = FindViewById<TextView>(Resource.Id.tvLog)!;
+        _tvLogCount = FindViewById<TextView>(Resource.Id.tvLogCount)!;
+        FindViewById<TextView>(Resource.Id.btnLogCopy)!.Click += (_, _) => CopyLog();
+        FindViewById<TextView>(Resource.Id.btnLogClear)!.Click += (_, _) => ClearLog();
         _tvOutput = FindViewById<TextView>(Resource.Id.tvOutput)!;
         _progress = FindViewById<ProgressBar>(Resource.Id.progress)!;
         _swFlip = FindViewById<Switch>(Resource.Id.swFlip)!;
@@ -176,6 +212,18 @@ public class MainActivity : Activity
         _swTtcMips = FindViewById<Switch>(Resource.Id.swTtcMips)!;
         _btnConvert = FindViewById<Button>(Resource.Id.btnConvert)!;
         _scrollLog = FindViewById<ScrollView>(Resource.Id.scrollLog)!;
+
+        // "Alpha" written in a flowing script: use the system Dancing Script face, else any cursive
+        TextView edition = FindViewById<TextView>(Resource.Id.tvEdition)!;
+        edition.Typeface = LoadScriptTypeface() ?? Typeface.Create("cursive", TypefaceStyle.Bold);
+        edition.Text = IsPublicBuild ? "Public" : "Alpha";
+        edition.TextSize = IsPublicBuild ? 34 : 42;
+
+        if (IsPublicBuild)
+        {
+            // This build only ships PNG -> TTX and WAV -> TSB, so keep the empty state honest.
+            _tvEmpty.Text = "还没有文件\n添加 .png / .wav";
+        }
 
         // mode hint line under the pills
         _tvModeHint = new TextView(this) { TextSize = 11 };
@@ -191,6 +239,39 @@ public class MainActivity : Activity
         }
 
         ApplyWindowInsets();
+    }
+
+    /// <summary>
+    /// The flowing script face for the "Alpha" wordmark: the AOSP Dancing Script font when the ROM
+    /// ships it, a bundled font from the assets folder otherwise, and any cursive face as the fallback.
+    /// </summary>
+    private Typeface? LoadScriptTypeface()
+    {
+        foreach (string path in new[]
+                 {
+                     "/system/fonts/DancingScript-Regular.ttf",
+                     "/system/fonts/DancingScript-Regular.otf",
+                     "/system/fonts/DancingScript-Bold.ttf",
+                 })
+        {
+            try
+            {
+                if (File.Exists(path)) return Typeface.CreateFromFile(path);
+            }
+            catch (Exception)
+            {
+                // try the next candidate
+            }
+        }
+
+        try
+        {
+            return Typeface.CreateFromAsset(Assets, "fonts/GreatVibes-Regular.ttf");
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private void ApplyWindowInsets()
@@ -222,7 +303,8 @@ public class MainActivity : Activity
 
     private void BuildPills()
     {
-        _modes = new PillGroup(this, _llModes, ModeLabels, 0, _ => UpdateModeUi());
+        string[] visibleLabels = VisibleModeIndexes.Select(i => ModeLabels[i]).ToArray();
+        _modes = new PillGroup(this, _llModes, visibleLabels, 0, _ => UpdateModeUi());
         _formats = new PillGroup(this, _llFormat, FormatLabels, 0, _ => { });
         _sizes = new PillGroup(this, _llSize, SizeLabels, 0, _ => { });
     }
@@ -274,7 +356,7 @@ public class MainActivity : Activity
 
     private void UpdateModeUi()
     {
-        int mode = _modes.SelectedIndex;
+        int mode = RealMode;
         _tvModeHint.Text = ModeHints[mode];
 
         _rowFormat.Visibility = mode is 2 or 7 ? ViewStates.Visible : ViewStates.Gone;
@@ -323,7 +405,7 @@ public class MainActivity : Activity
 
     private ConvertOptions BuildOptions()
     {
-        int mode = _modes.SelectedIndex;
+        int mode = RealMode;
         var options = new ConvertOptions
         {
             Flip = _swFlip.Checked,
@@ -355,7 +437,8 @@ public class MainActivity : Activity
     {
         var intent = new Intent(Intent.ActionOpenDocument);
         intent.AddCategory(Intent.CategoryOpenable);
-        intent.SetType("*/*");
+        intent.SetType(IsPublicBuild ? "*/*" : "*/*");
+        if (IsPublicBuild) intent.PutExtra(Intent.ExtraMimeTypes, new[] { "image/png", "audio/x-wav", "audio/wav" });
         intent.PutExtra(Intent.ExtraAllowMultiple, true);
         StartActivityForResult(intent, RequestPickFiles);
     }
@@ -528,6 +611,13 @@ public class MainActivity : Activity
                 ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
             rowParams.TopMargin = Dp(6);
 
+            var status = new TextView(this) { Text = "\u00b7", TextSize = 14 };
+            status.SetTextColor(Color.ParseColor("#46525F"));
+            status.Gravity = GravityFlags.Center;
+            status.SetPadding(0, 0, Dp(8), 0);
+            row.AddView(status);
+            item.RowStatus = status;
+
             var label = new TextView(this) { TextSize = 12 };
             label.SetTextColor(Soft);
             long size = new FileInfo(item.LocalPath).Length;
@@ -638,11 +728,11 @@ public class MainActivity : Activity
         _rowResultActions.Visibility = ViewStates.Gone;
 
         var files = _picked.ToList();
-        ConversionMode mode = SelectedMode(_modes.SelectedIndex);
+        ConversionMode mode = SelectedMode(RealMode);
         ConvertOptions options = BuildOptions();
         CancellationToken token = _cts.Token;
 
-        Log($"\n\u2014 {files.Count} 个文件 · {ModeLabels[_modes.SelectedIndex]} \u2014");
+        Log($"\n\u2014 {files.Count} 个文件 · {ModeLabels[RealMode]} \u2014");
 
         await Task.Run(() =>
         {
@@ -655,14 +745,17 @@ public class MainActivity : Activity
                     break;
                 }
 
+                MarkRow(file, "\u25b6", "#00B8FF");
                 ConversionOutcome outcome = Converter.ConvertFile(file.LocalPath, null, mode, options);
                 done++;
                 int progressValue = done;
                 RunOnUiThread(() => _progress.Progress = progressValue);
+                SetStatus($"正在转换 {done}/{files.Count}");
 
                 if (!outcome.Ok || outcome.Output is null)
                 {
                     failed++;
+                    MarkRow(file, "\u2715", "#FF7A7A");
                     Log($"失败 {file.DisplayName}：{outcome.Error}");
                     continue;
                 }
@@ -674,11 +767,13 @@ public class MainActivity : Activity
                     (string where, Uri? uri) = Publish(produced, name);
                     _results.Add(new ResultItem(name, where, uri));
                     ok++;
+                    MarkRow(file, "\u2713", "#5BE49B");
                     Log($"完成 {file.DisplayName} \u2192 {where}");
                 }
                 catch (Exception ex)
                 {
                     failed++;
+                    MarkRow(file, "\u2715", "#FF7A7A");
                     Log($"写入失败 {name}：{ex.Message}");
                 }
 
@@ -857,7 +952,7 @@ public class MainActivity : Activity
     {
         var prefs = GetSharedPreferences(Prefs, FileCreationMode.Private)!;
         using var editor = prefs.Edit()!;
-        editor.PutInt("mode", _modes.SelectedIndex);
+        editor.PutInt("mode", RealMode);
         editor.PutInt("format", _formats.SelectedIndex);
         editor.PutInt("size", _sizes.SelectedIndex);
         editor.PutBoolean("flip", _swFlip.Checked);
@@ -870,8 +965,9 @@ public class MainActivity : Activity
     private void RestoreState()
     {
         var prefs = GetSharedPreferences(Prefs, FileCreationMode.Private)!;
-        bool textureDefault = _modes.SelectedIndex is 1 or 2 or 6 or 7;
-        _modes.SetSelected(Math.Clamp(prefs.GetInt("mode", 0), 0, ModeLabels.Length - 1));
+        bool textureDefault = RealMode is 1 or 2 or 6 or 7;
+        int savedMode = Math.Clamp(prefs.GetInt("mode", VisibleModeIndexes[0]), 0, ModeLabels.Length - 1);
+        _modes.SetSelected(Math.Max(0, Array.IndexOf(VisibleModeIndexes, savedMode)));
         _formats.SetSelected(Math.Clamp(prefs.GetInt("format", 0), 0, FormatLabels.Length - 1));
         _sizes.SetSelected(Math.Clamp(prefs.GetInt("size", 0), 0, SizeLabels.Length - 1));
         _swFlip.Checked = prefs.GetBoolean("flip", true);
@@ -899,14 +995,121 @@ public class MainActivity : Activity
 
     private void Log(string message) => RunOnUiThread(() =>
     {
-        _tvLog.Text += message + "\n";
+        Color color;
+        string glyph;
+        if (message.Contains("失败") || message.Contains("错误") || message.StartsWith("FAIL", StringComparison.Ordinal))
+        {
+            color = Color.ParseColor("#FF7A7A");
+            glyph = "\u2715";
+        }
+        else if (message.Contains("完成") || message.Contains("成功") || message.StartsWith("OK", StringComparison.Ordinal))
+        {
+            color = Color.ParseColor("#5BE49B");
+            glyph = "\u2713";
+        }
+        else if (message.Contains("警告") || message.Contains("无法"))
+        {
+            color = Color.ParseColor("#FFC46B");
+            glyph = "!";
+        }
+        else
+        {
+            color = Color.ParseColor("#8A96A8");
+            glyph = "\u00b7";
+        }
+
+        // one span per line so errors and successes stand out from the neutral chatter
+        string line = glyph + "  " + message + "\n";
+        var span = new SpannableStringBuilder(line);
+        span.SetSpan(new ForegroundColorSpan(color), 0, line.Length, SpanTypes.ExclusiveExclusive);
+
+        var buffer = new SpannableStringBuilder(_tvLog.Text ?? string.Empty);
+        buffer.Append(span);
+        // keep the panel from growing without bound
+        if (buffer.Length() > 24000)
+            buffer.Delete(0, buffer.Length() - 24000);
+        _tvLog.TextFormatted = buffer;
+
+        _logText.AppendLine(glyph + "  " + message);
+        _logCount++;
+        _tvLogCount.Text = _logCount + " 条";
+
         if (_scrollLog.ChildCount > 0)
             _scrollLog.Post(() => _scrollLog.FullScroll(FocusSearchDirection.Down));
     });
 
+    private void ClearLog() => RunOnUiThread(() =>
+    {
+        _tvLog.TextFormatted = new SpannableStringBuilder();
+        _logText.Clear();
+        _logCount = 0;
+        _tvLogCount.Text = "";
+    });
+
+    private void CopyLog()
+    {
+        string text = _logText.ToString();
+        if (text.Length == 0)
+        {
+            Toast.MakeText(this, "日志是空的", ToastLength.Short)?.Show();
+            return;
+        }
+
+        try
+        {
+            var clipboard = (ClipboardManager?)GetSystemService(ClipboardService);
+            if (clipboard is not null)
+                clipboard.PrimaryClip = ClipData.NewPlainText("Aerofly 日志", text);
+            Toast.MakeText(this, "日志已复制", ToastLength.Short)?.Show();
+        }
+        catch (Exception ex)
+        {
+            Toast.MakeText(this, "复制失败：" + ex.Message, ToastLength.Short)?.Show();
+        }
+    }
+
     private void SetStatus(string text) => RunOnUiThread(() => _tvStatus.Text = text);
 
+    private void MarkRow(Picked file, string glyph, string color)
+    {
+        RunOnUiThread(() =>
+        {
+            if (file.RowStatus is null) return;
+            file.RowStatus.Text = glyph;
+            file.RowStatus.SetTextColor(Color.ParseColor(color));
+        });
+    }
+
     // ------------------------------------------------------------------ headless test hook
+
+    /// <summary>Fills the file list from the inbox so UI mode can be driven from adb.</summary>
+    private async void RunUiDemoAsync()
+    {
+        string baseDir = GetExternalFilesDir(null)?.AbsolutePath ?? CacheDir!.AbsolutePath;
+        string inputDir = Path.Combine(baseDir, "in");
+        Directory.CreateDirectory(inputDir);
+
+        string[] files;
+        try
+        {
+            files = Directory.GetFiles(inputDir)
+                .Where(f => !Path.GetFileName(f).StartsWith("result", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f)
+                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            Log("无法列出输入文件：" + ex.Message);
+            return;
+        }
+
+        _picked.Clear();
+        foreach (string file in files) _picked.Add(new Picked(file, Path.GetFileName(file)));
+        RenderFiles();
+        Log($"界面演示：{_picked.Count} 个文件");
+
+        if (_picked.Count > 0) await OnConvertClicked();
+    }
 
     private async void RunAutoAsync()
     {
@@ -935,7 +1138,7 @@ public class MainActivity : Activity
         }
 
         var lines = new List<string>();
-        ConversionMode mode = SelectedMode(_modes.SelectedIndex);
+        ConversionMode mode = SelectedMode(RealMode);
         ConvertOptions options = BuildOptions();
         string outDir = OutputDirectory();
 

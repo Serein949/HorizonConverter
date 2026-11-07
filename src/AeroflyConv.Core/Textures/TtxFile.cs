@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using AeroflyConv.Core.Codecs;
 using AeroflyConv.Core.Tm;
 
@@ -256,6 +256,9 @@ public static class TtxFile
         public required int Mips { get; init; }
         public required bool Compressed { get; init; }
         public required byte[] Data { get; init; }
+
+        /// <summary>Size of the pixel payload before LZHAM compression (0 when written plain).</summary>
+        public int PayloadBytes { get; init; }
     }
 
     /// <summary>
@@ -268,7 +271,7 @@ public static class TtxFile
         format = TextureFormats.Canonical(format);
 
         bool hasAlpha = false;
-        if (format == TextureFormats.AutoDxt || format is "type_rgb_etc2")
+        if (format == TextureFormats.AutoDxt || format == TextureFormats.AutoAstc || format is "type_rgb_etc2")
         {
             for (int i = 3; i < rgba.Length; i += 4)
             {
@@ -278,6 +281,9 @@ public static class TtxFile
 
         if (format == TextureFormats.AutoDxt)
             format = hasAlpha ? "type_rgba_s3tc_dxt5" : "type_rgb_s3tc_dxt1";
+
+        if (format == TextureFormats.AutoAstc)
+            format = hasAlpha ? "type_rgba_astc_6x6" : "type_rgb_astc_6x6";
 
         if (format == "type_rgb_etc2" && hasAlpha) format = "type_rgba_etc2";
 
@@ -328,6 +334,7 @@ public static class TtxFile
             Mips = mips,
             Compressed = compress,
             Data = data,
+            PayloadBytes = plain.Length,
         };
     }
 
@@ -386,7 +393,29 @@ public static class TtxFile
             }
 
             default:
+            {
+                if (format.StartsWith("type_rgb_astc_", StringComparison.Ordinal) ||
+                    format.StartsWith("type_rgba_astc_", StringComparison.Ordinal))
+                {
+                    var (bw, bh) = TextureFormats.AstcBlockSize(format);
+                    if (bw < 4 || bh < 4 || !AstcEncoder.SupportsBlockSize(bw, bh))
+                        throw new AeroflyFormatException($"unsupported ASTC block size in format: {format}");
+
+                    byte[] padded = MipChain.PadToMultiple(rgba, w, h, bw, bh, out int pw, out int ph);
+                    if (format.StartsWith("type_rgb_astc_", StringComparison.Ordinal))
+                    {
+                        // RGB formats carry no alpha: force opaque so the encoder stays in
+                        // 3-channel CEM 8 mode even when the source PNG had an alpha channel.
+                        for (int i = 3; i < padded.Length; i += 4)
+                            padded[i] = 255;
+                    }
+                    var dest = new byte[pw / bw * (ph / bh) * 16];
+                    AstcEncoder.Encode(padded, pw, ph, bw, bh, dest);
+                    return dest;
+                }
+
                 throw new AeroflyFormatException($"unsupported output texture format: {format}");
+            }
         }
     }
 

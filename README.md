@@ -10,7 +10,7 @@ BC1/BC3/ETC2 纹理编解码、自写的高吞吐 PNG 编码器、多文件并�
 
 | 环节 | 原版（Python + PySide6） | 本版（C# / .NET 10） |
 |---|---|---|
-| LZHAM | `wasmtime` 跑 `tmcompress.wasm`，压缩靠 `pylzham` | 纯 C# 移植的解码器 + raw-block 编码器（无原生依赖） |
+| LZHAM | `wasmtime` 跑 `tmcompress.wasm`，压缩靠 `pylzham` | 纯 C# 移植的编解码器：解码 99 MB/s、编码 5–7 MB/s（无原生依赖） |
 | 纹理解码 | `texture2ddecoder` + 逐像素 Python 循环补 RGBA | 托管 SIMD BC1/BC2/BC3/BC4/BC5/ETC1/ETC2 |
 | 纹理编码 | 逐块纯 Python BC1/BC3 | SIMD 块编码器（质量高于原版朴素实现：BC1 40.9 dB vs 38.0 dB） |
 | PNG 写出 | Pillow（Generic 管线） | 自写 PNG 编码器 + 逐行自适应滤波 + .NET zlib，快 4–5 倍 |
@@ -25,7 +25,9 @@ BC1/BC3/ETC2 纹理编解码、自写的高吞吐 PNG 编码器、多文件并�
 | 单个 4096×4096 DXT1 TTX → PNG | 12–16 s | ≈ 1.0 s | — |
 | PNG → TTX（1024² DXT1，含 mip 链 + LZHAM） | 11.1 s | 0.37 s（30×） | — |
 
-LZHAM 本体：解码 **162 MB/s**、编码 **728 MB/s**（与官方 C++ 版本产出的字节流逐字节一致）。
+LZHAM 本体：解码 **99 MB/s**、编码 **5–7 MB/s**；压缩率 **8.61×**（官方 C++ 参考实现 9.15×），
+流格式与发行版逐字段一致（`6E CD` + dict 21 / rate 20），官方 C++、本项目 C# 与
+`tmcompress.wasm` 三套解码器结果一致。
 
 ---
 
@@ -104,10 +106,13 @@ AeroflyConv some.ttx --info
 ## 4. 实现说明
 
 * **LZHAM**（`src/AeroflyConv.Core/Lzham`）：从官方 `lzham_codec` C++ 源码移植的自适应算术
-  编码解码器（sync/raw/comp/EOF 四种 block、全部符号模型、Huffman 前缀表）。编码方向只写
-  raw block，但块头、对齐与结尾 adler32 完全按规范编码。
-* **纹理编解码**（`Codecs/`）：BC1/BC2/BC3/BC4/BC5 与 ETC1/ETC2/EAC 解码、BC1/BC3 与
-  ETC2 RGB/RGBA 编码，全部 SIMD 手写；解码与 `texture2ddecoder` 逐字节一致。
+  编解码器（sync/raw/comp/EOF 四种 block、全部符号模型、Huffman 前缀表、匹配查找、raw 回退）。
+  解码 99 MB/s、编码 5–7 MB/s；2048² DXT1 贴图 2,796,528 → 324,706 字节（8.61×，官方参考
+  实现 9.15×）。产出的流被三套解码器读回一致：官方 C++、本项目 C#、社区工具用的
+  `tmcompress.wasm`。
+* **纹理编解码**（`Codecs/`）：BC1/BC2/BC3/BC4/BC5 与 ETC1/ETC2/EAC 解码、BC1/BC3、
+  ETC2 RGB/RGBA 编码，以及 **ASTC LDR 编解码**（4×4/5×5/6×6/8×8），全部托管实现；解码与
+  `texture2ddecoder` 逐字节一致，ASTC 编码产出的块同样两套解码器逐字节一致。
 * **容器**（`Tm/`、`Textures/`）：TTX/TTC/TSB/TM 的 chunk 树、mip 链、`compress_file`
   包装、CRC32、tmcompress 头，按原版语义重写（并兼容 IPACS 的 `string8u` 变体）。
 * **PNG**：读用 ImageSharp，写用自写编码器（RGB/RGBA、逐行 MSAD 自适应滤波）。
@@ -128,26 +133,34 @@ AeroflyConv some.ttx --info
 * TM→文本树的完整文本哈希（含 55 MB 的巨大 .tmb）
 * TSB→WAV 字节哈希
 * 原版实现（真 `pylzham` 压缩流）编码出的 TTX，用于验证 C# 解码器能吃"真压缩块"
-* C# 编码出的 TTX 已用原版解码器 + 官方 LZHAM wasm 反向验证可读
+* C# 编码出的 TTX 分别用官方 C++ `lzham_tool`、本项目解码器、以及社区工具用的
+  `tmcompress.wasm` 反向验证，解码结果逐字节一致；压缩率与官方参考实现相差 6%
 
 ```powershell
-dotnet run --project tools/Verify       # 63 项端到端对照（当前全部通过）
-dotnet run --project tools/LzhamCheck   # LZHAM 24 个解码向量 + 编码回环 + 吞吐
+dotnet run --project tools/Verify       # 端到端对照（需要 tests/vectors 参考数据）
+dotnet run --project tools/LzhamCheck -- <vectorsDir>   # LZHAM 解压向量 + 编码回环 + 吞吐
+dotnet run --project tools/LzhamEncCheck -- tests/corpus # LZHAM 编码器差分（官方工具对照）
+dotnet run --project tools/AstcEncCheck  # ASTC 编码 PSNR + 双解码器一致性
 dotnet run --project tools/CodecCheck   # 块压缩编解码 vs texture2ddecoder / etcpak
 ```
+
+> `tests/vectors` 未随仓库提交（几十 MB 的真实游戏文件）。重新生成后可跑 `tools/Verify` 与
+> 完整的 `tools/LzhamCheck`。
 
 ---
 
 ## 6. 已知限制（与原版的差异）
 
-* **ASTC**（`type_rgb_astc_*` / `type_rgba_astc_*`，仅 Aerofly 移动版用）不解码，会给出明确报错。
+* **ASTC**（`type_rgb_astc_*` / `type_rgba_astc_*`，Aerofly 移动版用）可以解码，也可以编码出
+  4×4/5×5/6×6/8×8 的 LDR 块（`--format astc6x6` / `astc5x5`）。编码器是单分区、8 位端点实现：
+  真实贴图 41–51 dB，通道独立的照片类内容约 29–30 dB（官方 astcenc quality 60 更高，但
+  需要多分区搜索）。
 * 游戏自带的 `scenery/images/map_*.ttc` 切片（头部格式标记 `0x1234567x`）是未公开的另一种
   变体，原版 Python 工具同样无法读取；本版给出明确提示。转换器自己生成的 TTC 正常工作。
 * **BC5 法线贴图**：本版按法线贴图规范重建 Z 通道（正确）；原版总是用零通道推导 Z，
   所以两者蓝色通道不同（红/绿通道逐字节一致）。这是有意修正。
-* **TTX 压缩写法**：用 LZHAM *raw block*（合法、游戏可读、已用官方解码器验证），但没有 LZ
-  匹配，文件体积接近未压缩大小。需要原版那种小体积时用 `--no-compress` 写非压缩容器，
-  或仍用原版 Python 的 `pylzham` 压缩。
+* **ASTC 编码速度**：2048² 贴图约 30 s（单分区搜索 + 权重网格枚举），比 DXT1 慢两个数量级；
+  手机上更慢。只影响 PNG→ASTC，不影响解码与其他格式。
 * 输入图片支持 PNG/JPG/BMP/GIF/TGA/WebP（ImageSharp）。
 
 ---
@@ -314,8 +327,8 @@ Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
 1. **存储限制**：Android 11+ 里 `Android/data/<包名>/` 对其他 App（Termux 也算）不可读。
    如果 Aerofly FS Global 的内容在这个目录，必须先 root / Shizuku，或把文件复制到
    `Download` 再用本工具处理。
-2. **ASTC**：部分移动设备用 ASTC 贴图，本项目只支持 ETC2/ETC1（解码）+ ETC2（编码），
-   遇到 ASTC 会明确报错。要完整支持移动端需要补一个 ASTC 解码器。
+2. **ASTC**：移动版用 ASTC 贴图，本项目的 ASTC 解码与编码都已实现（4×4/5×5/6×6/8×8），
+   不再需要额外的原生依赖。
 
 ---
 
@@ -324,15 +337,16 @@ Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
 ### 15.1 Android 应用
 
 `src/AeroflyConv.Android` 是一个 .NET for Android 原生应用（不是 MAUI，界面用 XML 布局），
-APK 在 `dist/v1.2/android/AeroflyConv-1.2.apk`（minSdk 24 / target 36）。
+APK 在 `dist/v1.21/android/AeroflyConverter-Alpha-1.21.apk`（minSdk 24 / target 36）；
+精简版是 `AeroflyConverter-Public-1.21.apk`（只保留 PNG→TTX、WAV→TSB，可与 Alpha 共存）。
 
-安装：`adb install -r AeroflyConv-1.2.apk`，或拷到手机后用文件管理器点击安装。
+安装：`adb install -r AeroflyConverter-Alpha-1.21.apk`，或拷到手机后用文件管理器点击安装。
 
-**v1.2 的界面（全中文）**：
+**界面（全中文）**：
 
 * 顶部**模式**药丸：自动识别 / TTX→PNG / PNG→TTX / TSB→WAV / WAV→TSB / TM→TXT / TTC→PNG / PNG→TTC；
 * **文件**卡片：`添加文件`（可多选）、`添加文件夹`（递归扫描）、`清空`，逐个文件可点 ✕ 移除；
-* **选项**卡片（按模式自动显示）：格式（自动 / DXT1 / DXT5 / ETC2 / R8）、贴图尺寸
+* **选项**卡片（按模式自动显示）：格式（自动 / DXT1 / DXT5 / ETC2 / R8 / ASTC 6x6 / ASTC 5x5）、贴图尺寸
   （匹配原尺寸 / 4096 / 2048 / 1024 / 源尺寸）、垂直翻转、压缩 TTX（LZHAM）、TTC 多级贴图；
 * **输出**卡片：默认 `Download/AeroflyConv`，可改成任意文件夹（SAF 授权，重启后保留）；
 * 转换后出现 `打开结果` / `分享`；
@@ -365,5 +379,30 @@ zlib 实现不同而略有差异，像素不变）。
 * 桌面吞吐 ≈ **249 MB/s**（2048×2048 6×6 单张 60–130 ms）；
 * `tools/AstcCheck` 可单独跑这套回归。
 
-也就是说：**手机版的贴图现在可以在电脑上转成 PNG 了**。写回移动版仍然只支持 ETC2
-（不做 ASTC 编码——那需要内置一个完整 ASTC 编码器）。
+也就是说：**手机版的贴图现在可以在电脑上转成 PNG，也能转回去了**。
+
+### 15.3 ASTC 编码（1.21 新增）
+
+`Codecs/AstcEncoder.cs` 是纯托管 C# 的 ASTC LDR 编码器，`PNG → TTX` 时可直接写出手游用的
+ASTC 贴图（CLI `--format astc6x6` / `astc5x5`，GUI 与手机端格式药丸同步新增）：
+
+* 单分区、8 位端点（CEM8 RGB / CEM12 RGBA），双平面关闭，权重网格在块尺寸内枚举；
+* 端点用交替最小二乘拟合，权重用坐标下降取整，评估误差用解码器的精确算式；
+* 常数块自动写成 void-extent（无损）；
+* 与官方解码器 `texture2ddecoder` 交叉验证：所有块**逐字节一致**，无一非法块；
+* 画质：真实贴图 41–51 dB（`callsign_bump` 50.87 dB、`callsign_light` 42.48 dB），
+  通道完全独立的照片类内容约 29–30 dB（单分区上限，官方 astcenc 用多分区可达 40 dB+）；
+* 速度：2048² 约 30 s，512² 约 0.5–1.2 s。
+
+---
+
+## 16. 版本记录
+
+### 1.21
+
+* **LZHAM 编码器真正实现**（此前写的是 raw block 占位，等于不压缩）：
+  2048² DXT1 的 TTX 从 2,796,592 B 降到 **324,992 B（8.61×）**，官方参考实现同数据 9.15×；
+  产出流经官方 C++、本项目 C#、`tmcompress.wasm` 三套解码器验证一致。
+* **ASTC 编码**落地，手机端 PNG→TTX 可写 ASTC 6x6 / 5x5。
+* 桌面与手机版本号统一到 **1.21**；Alpha（`com.aeroflyconv.app`）与 Public
+  （`com.aeroflyconv.converter`）可共存。

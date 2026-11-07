@@ -18,7 +18,7 @@ public enum ConversionMode
     PngToTtc,
     ZipToTme,
     TmeToZip,
-    Auto,
+    Auto,    XPlaneAircraft,
 }
 
 public sealed class ConvertOptions
@@ -242,7 +242,7 @@ public static class Converter
                         Output = outcome.Output,
                         Mode = outcome.Mode,
                         Ok = true,
-                        Summary = outcome.Summary + $"  [源目录不可写，已输出到 {root}]",
+                        Summary = outcome.Summary + $"  [源目录不可写，已输出到{root}]",
                         Milliseconds = outcome.Milliseconds,
                     };
                 }
@@ -520,8 +520,14 @@ public static class Converter
         TtxFile.EncodeResult result = TtxFile.Encode(rgba, w, h, format, options.Flip,
             options.CompressTtx, log);
         File.WriteAllBytes(output, result.Data);
-        return $"{result.Format} {result.Width}x{result.Height} mips={result.Mips} " +
-               $"{result.Data.Length:N0} bytes";
+        string summary = $"{result.Format} {result.Width}x{result.Height} mips={result.Mips} " +
+                         $"{result.Data.Length:N0} bytes";
+        if (result.Compressed && result.PayloadBytes > 0)
+        {
+            double ratio = (double)result.PayloadBytes / Math.Max(1, result.Data.Length);
+            summary += $" (LZHAM {result.PayloadBytes:N0} -> {result.Data.Length:N0}, {ratio:0.0}x)";
+        }
+        return summary;
     }
     private static string TsbToWav(string input, string output, Action<string>? log)
     {

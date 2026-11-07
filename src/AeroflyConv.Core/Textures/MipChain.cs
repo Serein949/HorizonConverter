@@ -224,10 +224,15 @@ public static class MipChain
 
     /// <summary>Pads an RGBA image up to a multiple of <paramref name="align"/> by edge clamping.</summary>
     public static byte[] PadToMultiple(ReadOnlySpan<byte> rgba, int width, int height, int align,
+        out int paddedWidth, out int paddedHeight) =>
+        PadToMultiple(rgba, width, height, align, align, out paddedWidth, out paddedHeight);
+
+    /// <summary>Pads an RGBA image up to a multiple of <paramref name="alignX"/>/<paramref name="alignY"/> by edge clamping.</summary>
+    public static byte[] PadToMultiple(ReadOnlySpan<byte> rgba, int width, int height, int alignX, int alignY,
         out int paddedWidth, out int paddedHeight)
     {
-        paddedWidth = (width + align - 1) / align * align;
-        paddedHeight = (height + align - 1) / align * align;
+        paddedWidth = (width + alignX - 1) / alignX * alignX;
+        paddedHeight = (height + alignY - 1) / alignY * alignY;
         if (paddedWidth == width && paddedHeight == height) return rgba.ToArray();
 
         var dest = new byte[paddedWidth * paddedHeight * 4];

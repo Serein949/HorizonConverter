@@ -17,23 +17,32 @@
         android:paddingBottom="24dp">
 
         <!-- header -->
-        <TextView
-            android:id="@+id/tvTitle"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Aerofly 转换器"
-            android:textColor="#F8FAFD"
-            android:textSize="26sp"
-            android:fontFamily="sans-serif-medium" />
+            android:gravity="bottom">
 
-        <TextView
-            android:id="@+id/tvSubtitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="TTX · TSB · TTC · TM —— 纯 C# 实现"
-            android:textColor="#7C8797"
-            android:textSize="12sp" />
+            <TextView
+                android:id="@+id/tvTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="4dp"
+                android:text="Aerofly 转换器"
+                android:textColor="#F8FAFD"
+                android:textSize="26sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:id="@+id/tvEdition"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:includeFontPadding="false"
+                android:text="Alpha"
+                android:textColor="#00B8FF"
+                android:textSize="42sp" />
+        </LinearLayout>
 
         <!-- mode -->
         <LinearLayout
@@ -450,27 +459,76 @@
             android:background="@drawable/bg_card"
             android:padding="12dp">
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:orientation="horizontal"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="日志"
-                android:textColor="#7C8797"
-                android:textSize="11sp"
-                android:letterSpacing="0.12" />
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="日志"
+                    android:textColor="#7C8797"
+                    android:textSize="11sp"
+                    android:letterSpacing="0.12" />
+
+                <TextView
+                    android:id="@+id/tvLogCount"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text=""
+                    android:textColor="#3D4A5C"
+                    android:textSize="10sp"
+                    android:fontFamily="monospace" />
+
+                <TextView
+                    android:id="@+id/btnLogCopy"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_ghost_small"
+                    android:paddingLeft="10dp"
+                    android:paddingRight="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="复制"
+                    android:textColor="#C6CEDA"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/btnLogClear"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_ghost_small"
+                    android:paddingLeft="10dp"
+                    android:paddingRight="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="清空"
+                    android:textColor="#C6CEDA"
+                    android:textSize="11sp" />
+            </LinearLayout>
 
             <ScrollView
                 android:id="@+id/scrollLog"
                 android:layout_width="match_parent"
-                android:layout_height="200dp"
-                android:layout_marginTop="6dp"
-                android:scrollbars="vertical">
+                android:layout_height="168dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_log"
+                android:padding="10dp"
+                android:scrollbars="none"
+                android:fadeScrollbars="false">
 
                 <TextView
                     android:id="@+id/tvLog"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textColor="#8FD6B0"
-                    android:textSize="11sp"
+                    android:lineSpacingExtra="4dp"
+                    android:textColor="#AEB8C6"
+                    android:textSize="11.5sp"
                     android:fontFamily="monospace"
                     android:textIsSelectable="true" />
             </ScrollView>

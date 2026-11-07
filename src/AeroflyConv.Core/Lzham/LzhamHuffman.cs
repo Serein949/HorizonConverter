@@ -22,6 +22,9 @@ internal sealed class HuffmanModel
     public readonly ushort[] SymFreq;
     private readonly byte[] _codeSizes;
 
+    // Canonical codes derived from _codeSizes (encoder side; mirrors the C++ generate_codes()).
+    private readonly ushort[] _codes;
+
     // Decoder tables.
     private readonly uint[] _maxCodes = new uint[MaxExpectedCodeSize + 2];
     private readonly int[] _valPtrs = new int[MaxExpectedCodeSize + 2];
@@ -58,6 +61,7 @@ internal sealed class HuffmanModel
         NumSyms = numSyms;
         SymFreq = new ushort[numSyms];
         _codeSizes = new byte[numSyms];
+        _codes = new ushort[numSyms];
         _syms0 = new SymFreq[numSyms];
         _syms1 = new SymFreq[numSyms];
         _x = new int[numSyms];
@@ -171,6 +175,98 @@ internal sealed class HuffmanModel
             actualTableBits = 0;
 
         GenerateDecoderTables(actualTableBits);
+
+        // The canonical codes are a pure function of the (now final) code sizes, so both the
+        // encoder and the decoder tables above are guaranteed to agree on them.
+        GenerateCanonicalCodes();
+    }
+
+    /// <summary>
+    /// Builds the canonical Huffman codes from <c>_codeSizes</c>, exactly like the reference
+    /// encoder's <c>generate_codes()</c>: symbols of the same length are assigned increasing
+    /// codes in symbol order, which is the order the decoder table builder reconstructs too.
+    /// </summary>
+    private void GenerateCanonicalCodes()
+    {
+        Span<int> numCodes = stackalloc int[MaxExpectedCodeSize + 1];
+        numCodes.Clear();
+
+        for (int i = 0; i < NumSyms; i++)
+            numCodes[_codeSizes[i]]++;
+
+        Span<uint> nextCode = stackalloc uint[MaxExpectedCodeSize + 1];
+        uint code = 0;
+        for (int i = 1; i <= MaxExpectedCodeSize; i++)
+        {
+            nextCode[i] = code;
+            code = (code + (uint)numCodes[i]) << 1;
+        }
+
+        for (int i = 0; i < NumSyms; i++)
+        {
+            int c = _codeSizes[i];
+            _codes[i] = c == 0 ? (ushort)0 : (ushort)nextCode[c]++;
+        }
+    }
+
+    /// <summary>Canonical code for a symbol (valid after the most recent table update).</summary>
+    public ushort Code(int sym) => _codes[sym];
+
+    /// <summary>Bit length of the canonical code for a symbol.</summary>
+    public int CodeSize(int sym) => _codeSizes[sym];
+
+    /// <summary>
+    /// Encoder-side mirror of <see cref="DecodeSymbol"/>'s model update: bump the symbol's
+    /// frequency and refresh the tables when the update cycle expires. The produced code bits
+    /// must be written by the caller <em>before</em> calling this.
+    /// </summary>
+    public void EncodeSymbol(int sym)
+    {
+        uint freq = (uint)(SymFreq[sym] + 1);
+        SymFreq[sym] = (ushort)freq;
+
+        if (--SymbolsUntilUpdate == 0)
+            UpdateTables();
+    }
+
+    /// <summary>
+    /// Deep copy used by the block encoder so a block can be optimistically compressed and its
+    /// model updates discarded if the block ends up emitted as raw bytes.
+    /// </summary>
+    public HuffmanModel Clone()
+    {
+        var clone = new HuffmanModel(NumSyms)
+        {
+            _maxUpdateInterval = _maxUpdateInterval,
+            _adaptRate = _adaptRate,
+            _decoderTableBits = _decoderTableBits,
+            SymbolsUntilUpdate = SymbolsUntilUpdate,
+            UpdateCycle = UpdateCycle,
+            MaxCycle = MaxCycle,
+            TotalCount = TotalCount,
+            TableBits = TableBits,
+            TableShift = TableShift,
+            TableMaxCode = TableMaxCode,
+            DecodeStartCodeSize = DecodeStartCodeSize,
+            MinCodeSize = MinCodeSize,
+            MaxCodeSize = MaxCodeSize,
+            TotalUsedSyms = TotalUsedSyms,
+        };
+
+        Array.Copy(SymFreq, clone.SymFreq, NumSyms);
+        Array.Copy(_codeSizes, clone._codeSizes, NumSyms);
+        Array.Copy(_codes, clone._codes, NumSyms);
+        Array.Copy(_maxCodes, clone._maxCodes, _maxCodes.Length);
+        Array.Copy(_valPtrs, clone._valPtrs, _valPtrs.Length);
+        Array.Copy(_sorted, clone._sorted, NumSyms);
+
+        if (_lookup is not null)
+        {
+            clone._lookup = new uint[_lookup.Length];
+            Array.Copy(_lookup, clone._lookup, _lookup.Length);
+        }
+
+        return clone;
     }
 
     private bool GenerateHuffmanCodes(out int maxCodeSizeOut, out int totalFreqRet)

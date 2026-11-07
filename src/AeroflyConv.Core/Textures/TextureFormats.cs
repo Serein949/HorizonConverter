@@ -14,12 +14,28 @@ public static class TextureFormats
         ["type_rgba_s3tc_dxt5"] = "DXT5 (BC3, alpha)",
         ["type_rgb_etc2"] = "ETC2 RGB (mobile)",
         ["type_rgba_etc2"] = "ETC2 RGBA (mobile, alpha)",
+        ["type_rgb_astc_4x4"] = "ASTC 4x4 RGB (mobile)",
+        ["type_rgba_astc_4x4"] = "ASTC 4x4 RGBA (mobile, alpha)",
+        ["type_rgb_astc_5x5"] = "ASTC 5x5 RGB (mobile)",
+        ["type_rgba_astc_5x5"] = "ASTC 5x5 RGBA (mobile, alpha)",
+        ["type_rgb_astc_6x6"] = "ASTC 6x6 RGB (mobile)",
+        ["type_rgba_astc_6x6"] = "ASTC 6x6 RGBA (mobile, alpha)",
+        ["type_rgb_astc_8x8"] = "ASTC 8x8 RGB (mobile)",
+        ["type_rgba_astc_8x8"] = "ASTC 8x8 RGBA (mobile, alpha)",
     }.ToFrozenDictionary(StringComparer.Ordinal);
 
     private static readonly FrozenDictionary<string, string> Aliases = new Dictionary<string, string>
     {
+        ["astc"] = "type_rgb_astc_6x6",
+        ["astc4x4"] = "type_rgb_astc_4x4",
+        ["astc_4x4"] = "type_rgb_astc_4x4",
+        ["astc5x5"] = "type_rgba_astc_5x5",
+        ["astc_5x5"] = "type_rgba_astc_5x5",
         ["astc6x6"] = "type_rgb_astc_6x6",
         ["astc_6x6"] = "type_rgb_astc_6x6",
+        ["astc8x8"] = "type_rgb_astc_8x8",
+        ["astc_8x8"] = "type_rgb_astc_8x8",
+        ["astc_auto"] = "astc_auto",
         ["etc2"] = "type_rgb_etc2",
         ["dxt1"] = "type_rgb_s3tc_dxt1",
         ["dxt5"] = "type_rgba_s3tc_dxt5",
@@ -27,6 +43,9 @@ public static class TextureFormats
 
     /// <summary>Formats where "auto" means DXT5 if the image has alpha, else DXT1.</summary>
     public const string AutoDxt = "dxt_auto";
+
+    /// <summary>Formats where "auto" means ASTC RGBA if the image has alpha, else ASTC RGB.</summary>
+    public const string AutoAstc = "astc_auto";
 
     public static string Canonical(string format) =>
         Aliases.TryGetValue(format, out var mapped) ? mapped : format;

@@ -6,8 +6,10 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/AstcCheck/AstcCheck.csproj" />
+    <Project Path="tools/AstcEncCheck/AstcEncCheck.csproj" />
     <Project Path="tools/CodecCheck/CodecCheck.csproj" />
     <Project Path="tools/LzhamCheck/LzhamCheck.csproj" />
+    <Project Path="tools/LzhamEncCheck/LzhamEncCheck.csproj" />
     <Project Path="tools/Verify/Verify.csproj" />
   </Folder>
 </Solution>

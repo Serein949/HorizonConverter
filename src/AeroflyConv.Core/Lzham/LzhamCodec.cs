@@ -56,18 +56,18 @@ public static class LzhamCodec
     }
 
     /// <summary>
-    /// Compress using only LZHAM "raw / uncompressed blocks". The returned buffer is a complete,
-    /// valid LZHAM stream (zlib-style 6E CD header, raw blocks, EOF block, adler32).
+    /// Compresses with the real LZHAM encoder. The returned buffer is a complete, valid LZHAM stream
+    /// (zlib-style 6E CD header, compressed blocks with per-block raw fallback, EOF block, adler32).
     /// </summary>
     public static byte[] CompressRaw(ReadOnlySpan<byte> data, int dictLog2 = 21, int tableUpdateRate = 20) =>
-        LzhamRawEncoder.Compress(data, dictLog2, tableUpdateRate);
+        LzhamEncoder.Compress(data, dictLog2, tableUpdateRate);
 
     /// <summary>
     /// Same as <see cref="CompressRaw"/> but wraps the stream in the 64-byte tmcompress header.
     /// </summary>
     public static byte[] CompressTmBlob(ReadOnlySpan<byte> data, int dictLog2 = 21, int tableUpdateRate = 20)
     {
-        byte[] stream = LzhamRawEncoder.Compress(data, dictLog2, tableUpdateRate);
+        byte[] stream = LzhamEncoder.Compress(data, dictLog2, tableUpdateRate);
 
         var blob = new byte[TmHeaderSize + stream.Length];
         BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(0, 4), TmHeaderSize);

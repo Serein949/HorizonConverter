@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -45,6 +45,9 @@ internal sealed class MainForm : Form
 
     private static readonly (string Category, NavEntry[] Items)[] Modes =
     [
+        ("Aircraft", [
+            new NavEntry { Text = "X-Plane 12 \u2192 Aerofly FS 4", Mode = ConversionMode.XPlaneAircraft },
+        ]),
         ("Textures", [
             new NavEntry { Text = "TTX \u2192 PNG", Mode = ConversionMode.TtxToPng },
             new NavEntry { Text = "PNG \u2192 TTX", Mode = ConversionMode.PngToTtx },
@@ -507,6 +510,8 @@ internal sealed class MainForm : Form
 
         (string hint, string pageHint) = mode switch
         {
+            ConversionMode.XPlaneAircraft => ("点下面的「打开转换窗口」",
+                "X-Plane 12 机模 → Aerofly FS 4：模型、材质、可动部件、贴图一起生成，可直接装进 Aerofly"),
             ConversionMode.TtxToPng => ("Drag && drop .ttx textures here\nor use \"Add files\"",
                 "DXT1/3/5, BC5 normal maps, ETC2, raw RGBA and R8 textures to PNG"),
             ConversionMode.PngToTtx => ("Drag && drop PNG / JPG / TGA images here",
@@ -524,6 +529,14 @@ internal sealed class MainForm : Form
         };
         _hintLabel.Text = hint;
         _pageHint.Text = pageHint;
+
+        bool isAircraft = mode == ConversionMode.XPlaneAircraft;
+        if (_filesCard is not null) _filesCard.Visible = !isAircraft;
+        _browseButton.Visible = !isAircraft;
+        _clearButton.Visible = !isAircraft;
+        _openFolderButton.Visible = !isAircraft;
+        _convertButton.Text = isAircraft ? "打开转换窗口" : "Convert";
+        _convertButton.Width = isAircraft ? 160 : 130;
 
         _flipRelevant = mode is ConversionMode.TtxToPng or ConversionMode.PngToTtx or
             ConversionMode.TtcToPng or ConversionMode.PngToTtc;
@@ -544,6 +557,8 @@ internal sealed class MainForm : Form
                 "Grayscale R8",
                 "FSG Mobile \u2014 ETC2 RGB",
                 "FSG Mobile \u2014 ETC2 RGBA",
+                "FSG Mobile \u2014 ASTC 6x6 RGB",
+                "FSG Mobile \u2014 ASTC 5x5 RGBA",
             ]);
             _formatSelect.Enabled = true;
             _formatLabel.Text = "Format";
@@ -593,6 +608,8 @@ internal sealed class MainForm : Form
         4 => "type_r",
         5 => "type_rgb_etc2",
         6 => "type_rgba_etc2",
+        7 => "type_rgb_astc_6x6",
+        8 => "type_rgba_astc_5x5",
         _ => "dxt_auto",
     };
 
@@ -687,6 +704,12 @@ internal sealed class MainForm : Form
     private async Task ConvertAsync()
     {
         if (_busy) return;
+        if (CurrentMode == ConversionMode.XPlaneAircraft)
+        {
+            using var wizard = new XPlaneForm();
+            wizard.ShowDialog(this);
+            return;
+        }
         if (_fileList.Items.Count == 0)
         {
             using var dialog = new FolderBrowserDialog { Description = "Select a folder to convert" };
