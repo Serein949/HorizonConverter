@@ -4,9 +4,10 @@
     android:layout_height="match_parent"
     android:background="#05070C">
 
-    <!-- animated aurora / light layer -->
-    <AeroflyConv.Android.AuroraView
-        android:id="@+id/aurora"
+    <!-- animated aurora / light layer; the view itself is added in code so that the
+         layout does not have to name a .NET type (LayoutInflater cannot instantiate those) -->
+    <FrameLayout
+        android:id="@+id/auroraHost"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 

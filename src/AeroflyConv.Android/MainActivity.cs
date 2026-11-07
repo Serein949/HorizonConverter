@@ -134,9 +134,42 @@ public class MainActivity : Activity
     }
     private sealed record ResultItem(string DisplayName, string Where, Uri? Uri);
 
+    /// <summary>
+    /// Writes an unhandled exception to <c>Android/data/com.aeroflyconv.*/files/crash.txt</c> so a
+    /// crash can still be diagnosed when no adb session is available.
+    /// </summary>
+    private void InstallCrashLog()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => WriteCrash(e.ExceptionObject as Exception);
+        global::Android.Runtime.AndroidEnvironment.UnhandledExceptionRaiser += (_, e) =>
+        {
+            WriteCrash(e.Exception);
+            e.Handled = true;
+        };
+    }
+
+    private void WriteCrash(Exception? ex)
+    {
+        if (ex is null)
+        {
+            return;
+        }
+
+        try
+        {
+            string path = Path.Combine(GetExternalFilesDir(null)?.AbsolutePath ?? FilesDir!.AbsolutePath, "crash.txt");
+            File.WriteAllText(path, DateTime.Now.ToString("s") + System.Environment.NewLine + ex);
+        }
+        catch (Exception)
+        {
+            // nothing useful left to do
+        }
+    }
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        InstallCrashLog();
         Title = ProductLabel;
         // let the wallpaper gradient run under the status bar; the insets listener pads the content
         Window?.AddFlags(WindowManagerFlags.DrawsSystemBarBackgrounds);
@@ -215,7 +248,19 @@ public class MainActivity : Activity
 
     private void BindViews()
     {
-        _aurora = FindViewById<AuroraView>(Resource.Id.aurora)!;
+        // custom views cannot be named in XML (LayoutInflater only knows Java classes), so the
+        // aurora layer is created here and dropped into its placeholder host
+        try
+        {
+            var auroraHost = FindViewById<FrameLayout>(Resource.Id.auroraHost)!;
+            _aurora = new AuroraView(this);
+            auroraHost.AddView(_aurora, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+        }
+        catch (Exception ex)
+        {
+            Log("背景动效不可用，已使用纯色背景：" + ex.Message);
+        }
         _llModes = FindViewById<LinearLayout>(Resource.Id.llModes)!;
         _llFormat = FindViewById<LinearLayout>(Resource.Id.llFormat)!;
         _llSize = FindViewById<LinearLayout>(Resource.Id.llSize)!;

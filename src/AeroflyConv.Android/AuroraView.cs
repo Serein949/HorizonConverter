@@ -54,6 +54,7 @@ public sealed class AuroraView : View
     private long _startNanos;
     private float _elapsed;
     private bool _visible = true;
+    private bool _failed;
 
     public AuroraView(Context context) : base(context) => Init();
 
@@ -117,6 +118,25 @@ public sealed class AuroraView : View
     }
 
     protected override void OnDraw(Canvas canvas)
+    {
+        if (_failed)
+        {
+            return;
+        }
+
+        try
+        {
+            DrawFrame(canvas);
+        }
+        catch (Exception)
+        {
+            // never take the app down because of a decorative background: fall back to the
+            // flat base colour for the rest of the session
+            _failed = true;
+        }
+    }
+
+    private void DrawFrame(Canvas canvas)
     {
         int w = Width;
         int h = Height;
