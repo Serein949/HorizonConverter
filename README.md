@@ -1,8 +1,9 @@
 # AeroflyConv — 快得多的 Aerofly FS 转换器（C# / .NET 10）
 
 [`RishiK-06/AeroflyFS-Native-Converter`](https://github.com/RishiK-06/AeroflyFS-Native-Converter) 的 C# 重写版：
-功能一一对照，但整条处理管线都是原生代码 —— 纯托管 C# 的 LZHAM 编解码器、SIMD 的
-BC1/BC3/ETC2 纹理编解码、自写的高吞吐 PNG 编码器、多文件并行批处理。
+功能一一对照，但整条处理管线都是原生代码 —— 纯托管 C# 的 LZHAM 编解码器（**真压缩，8.61×**）、
+SIMD 的 BC1/BC3/ETC2 纹理编解码、**ASTC 编解码**（手机版贴图）、自写的高吞吐 PNG 编码器、
+多文件并行批处理。
 
 ![GUI](docs/screenshot.png)
 
@@ -23,7 +24,7 @@ BC1/BC3/ETC2 纹理编解码、自写的高吞吐 PNG 编码器、多文件并�
 |---|---|---|---|
 | TTX → PNG（24 个文件） | **183.2 s** (0.13 文件/s) | **14.6 s**（12.5×） | **4.7 s**（39×） |
 | 单个 4096×4096 DXT1 TTX → PNG | 12–16 s | ≈ 1.0 s | — |
-| PNG → TTX（1024² DXT1，含 mip 链 + LZHAM） | 11.1 s | 0.37 s（30×） | — |
+| PNG → TTX（1024² DXT1，含 mip 链 + LZHAM） | 11.1 s | 0.64 s（17×） | — |
 
 LZHAM 本体：解码 **99 MB/s**、编码 **5–7 MB/s**；压缩率 **8.61×**（官方 C++ 参考实现 9.15×），
 流格式与发行版逐字段一致（`6E CD` + dict 21 / rate 20），官方 C++、本项目 C# 与
