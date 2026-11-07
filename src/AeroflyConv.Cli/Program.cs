@@ -15,6 +15,13 @@ internal static class Program
         if (args.Length > 0 && args[0] is "xplane" or "xp")
             return XPlane.Run(args.AsSpan(1));
 
+        if (args.Any(a => a is "-v" or "--version" or "version"))
+        {
+            Console.WriteLine($"{ProductInfo.Name} / {ProductInfo.Banner}");
+            Console.WriteLine("Aerofly FS TTX / TSB / TOC / TTC 转换器（纯 C# 实现）");
+            return 0;
+        }
+
         if (args.Length == 0 || args.Any(a => a is "-h" or "--help" or "help"))
         {
             PrintHelp();

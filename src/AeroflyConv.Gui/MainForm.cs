@@ -70,7 +70,7 @@ internal sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "Aerofly Converter";
+        Text = AeroflyConv.Core.ProductInfo.Banner;
         MinimumSize = new Size(1080, 720);
         Size = new Size(1260, 820);
         BackColor = Theme.BaseTop;

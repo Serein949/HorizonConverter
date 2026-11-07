@@ -10,6 +10,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>AeroflyConv</AssemblyName>
+    <Version>1.21</Version>
+    <FileVersion>1.21.0.0</FileVersion>
+    <AssemblyVersion>1.21.0.0</AssemblyVersion>
+    <Product>Aerofly 转换器</Product>
+    <Company>AeroflyConv</Company>
     <RootNamespace>AeroflyConv.Cli</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
