@@ -98,6 +98,18 @@ internal static class Program
                 case "--no-fit":
                     options.FitExistingTexture = false;
                     break;
+                case "--astc-quality":
+                {
+                    string text = RequireArg(args, ref i, arg);
+                    if (!AeroflyConv.Core.Codecs.AstcQualityNames.TryParse(text, out var quality))
+                    {
+                        Console.Error.WriteLine($"unknown ASTC quality: {text} (fast|standard|high)");
+                        return 2;
+                    }
+
+                    options.AstcQuality = quality;
+                    break;
+                }
                 case "--zoom":
                     options.TtcZoom = int.Parse(RequireArg(args, ref i, arg));
                     break;
@@ -273,6 +285,7 @@ internal static class Program
                   --png-quality <q>   fast (default) | balanced | best
                   --size <n>          force the output texture size (power of two, e.g. 4096)
                   --no-fit            do not match the size/format of an existing .ttx
+                  --astc-quality <q>  ASTC encoding: fast | standard (default) | high
                   --zoom <n>          TTC header "extra"/zoom (default: from map_N_ name)
                   --no-overwrite      skip files that already exist
                   --info              only print metadata

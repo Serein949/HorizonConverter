@@ -72,6 +72,11 @@ public sealed class ConvertOptions
     /// </summary>
     public bool FlipExplicit { get; set; }
 
+    /// <summary>
+    /// Speed/quality trade-off for ASTC encoding (ignored for DXT/ETC2/R8).
+    /// </summary>
+    public Codecs.AstcQuality AstcQuality { get; set; } = Codecs.AstcQuality.Standard;
+
     /// <summary>Set by <see cref="Converter.ConvertAll"/> so folder conversions mirror their layout.</summary>
     public string? MirrorRoot { get; set; }
 
@@ -518,7 +523,7 @@ public static class Converter
 
         log?.Invoke($"Encoding {format} ...");
         TtxFile.EncodeResult result = TtxFile.Encode(rgba, w, h, format, options.Flip,
-            options.CompressTtx, log);
+            options.CompressTtx, log, options.AstcQuality);
         File.WriteAllBytes(output, result.Data);
         string summary = $"{result.Format} {result.Width}x{result.Height} mips={result.Mips} " +
                          $"{result.Data.Length:N0} bytes";

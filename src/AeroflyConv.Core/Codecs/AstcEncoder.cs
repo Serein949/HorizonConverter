@@ -38,6 +38,35 @@ public static class AstcEncoder
     // optimum. Full enumeration over 32 levels costs ~6x more for ~0.05 dB.
     private const int DescentRadius = 2;
 
+    /// <summary>
+    /// Per-call search budget. <see cref="AstcQuality.Standard"/> uses the
+    /// tuned defaults above and produces byte-identical blocks to the previous
+    /// fixed-budget encoder.
+    /// </summary>
+    private readonly struct Settings
+    {
+        public readonly int RefineCount;
+        public readonly int Iterations;
+        public readonly int Radius;
+
+        public Settings(int refineCount, int iterations, int radius)
+        {
+            RefineCount = refineCount;
+            Iterations = iterations;
+            Radius = radius;
+        }
+
+        public static Settings For(AstcQuality quality) => quality switch
+        {
+            // One refinement pass, three grids, +-1 level search.
+            AstcQuality.Fast => new Settings(3, 1, 1),
+            // Every candidate grid, three passes, +-3 level search. The gain over
+            // Standard is small (~0.05 dB) but it is the best this design does.
+            AstcQuality.High => new Settings(MaxConfigs, 2, 3),
+            _ => new Settings(RefineConfigCount, 2, DescentRadius),
+        };
+    }
+
     private static readonly int[] Levels1 = { 0, 64 };
 
     private static readonly int[] Levels2 = { 0, 21, 43, 64 };
@@ -90,13 +119,15 @@ public static class AstcEncoder
     /// Destination, at least ceil(width/blockWidth)*ceil(height/blockHeight)*16 bytes,
     /// row-major blocks.
     /// </param>
+    /// <param name="quality">Speed/quality trade-off; defaults to <see cref="AstcQuality.Standard"/>.</param>
     public static void Encode(
         ReadOnlySpan<byte> rgba,
         int width,
         int height,
         int blockWidth,
         int blockHeight,
-        Span<byte> output)
+        Span<byte> output,
+        AstcQuality quality = AstcQuality.Standard)
     {
         if (!SupportsBlockSize(blockWidth, blockHeight))
             throw new ArgumentOutOfRangeException(
@@ -130,6 +161,7 @@ public static class AstcEncoder
         int channels = hasAlpha ? 4 : 3;
         var configs = new Config[MaxConfigs];
         int configCount = BuildConfigs(blockWidth, blockHeight, channels, configs);
+        Settings settings = Settings.For(quality);
 
         // Blocks are independent, so large images are encoded one row of blocks
         // at a time in parallel. The result is bit-identical to the serial path
@@ -152,7 +184,7 @@ public static class AstcEncoder
                         {
                             EncodeBlock(
                                 blockRows, width, height, blockWidth, blockHeight, channels,
-                                configs, configCount, bx, by,
+                                configs, configCount, settings, bx, by,
                                 new Span<byte>(dst + (by * blocksX + bx) * 16, 16),
                                 pixels);
                         }
@@ -171,7 +203,7 @@ public static class AstcEncoder
                 {
                     EncodeBlock(
                         rgba, width, height, blockWidth, blockHeight, channels,
-                        configs, configCount, bx, by,
+                        configs, configCount, settings, bx, by,
                         output.Slice((by * blocksX + bx) * 16, 16),
                         pixels);
                 }
@@ -188,6 +220,7 @@ public static class AstcEncoder
         int channels,
         Config[] configs,
         int configCount,
+        in Settings settings,
         int bx,
         int by,
         Span<byte> destination,
@@ -245,7 +278,7 @@ public static class AstcEncoder
             for (int c = 0; c < configCount; c++)
                 scores[c] = EvaluateConfig(pixels, blockWidth, blockHeight, channels, configs[c]);
 
-            int refineCount = Math.Min(RefineConfigCount, configCount);
+            int refineCount = Math.Min(settings.RefineCount, configCount);
             long bestError = long.MaxValue;
             for (int pick = 0; pick < refineCount; pick++)
             {
@@ -267,6 +300,7 @@ public static class AstcEncoder
                     blockHeight,
                     channels,
                     configs[bestIndex],
+                    settings,
                     block);
                 if (error < bestError)
                 {
@@ -359,6 +393,7 @@ public static class AstcEncoder
         int blockHeight,
         int channels,
         in Config config,
+        in Settings settings,
         Span<byte> outBlock)
     {
         int pixelCount = blockWidth * blockHeight;
@@ -424,9 +459,9 @@ public static class AstcEncoder
         OptimizeWeights(
             pixels, pixelCount, channels, e0, e1, grid, weights, levels,
             idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3,
-            affStart, affPixels, gridCount, passes: 2);
+            affStart, affPixels, gridCount, passes: 2, radius: settings.Radius);
 
-        for (int iteration = 0; iteration < 2; iteration++)
+        for (int iteration = 0; iteration < settings.Iterations; iteration++)
         {
             FitEndpoints(pixels, pixelCount, channels, weights, e0, e1);
             ProjectGrid(
@@ -435,7 +470,7 @@ public static class AstcEncoder
             OptimizeWeights(
                 pixels, pixelCount, channels, e0, e1, grid, weights, levels,
                 idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3,
-                affStart, affPixels, gridCount, passes: 2);
+                affStart, affPixels, gridCount, passes: 2, radius: settings.Radius);
         }
 
         // A final endpoint pass makes sure the emitted pair is the best one for
@@ -449,7 +484,7 @@ public static class AstcEncoder
             OptimizeWeights(
                 pixels, pixelCount, channels, e0, e1, grid, weights, levels,
                 idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3,
-                affStart, affPixels, gridCount, passes: 2);
+                affStart, affPixels, gridCount, passes: 2, radius: settings.Radius);
         }
 
         EmitBlock(outBlock, channels, config, grid, levels, e0, e1);
@@ -706,7 +741,7 @@ public static class AstcEncoder
         ReadOnlySpan<byte> coef0, ReadOnlySpan<byte> coef1,
         ReadOnlySpan<byte> coef2, ReadOnlySpan<byte> coef3,
         ReadOnlySpan<int> affStart, ReadOnlySpan<int> affPixels,
-        int gridCount, int passes)
+        int gridCount, int passes, int radius)
     {
         for (int pass = 0; pass < passes; pass++)
         {
@@ -721,10 +756,10 @@ public static class AstcEncoder
 
                 // Only levels near the projected optimum are considered: the
                 // error curve for a single grid point is unimodal enough that
-                // a window of 2*DescentRadius+1 levels loses ~0.05 dB while
+                // a window of 2*radius+1 levels loses ~0.05 dB while
                 // cutting the search by up to 6x.
-                int lo = Math.Max(0, original - DescentRadius);
-                int hi = Math.Min(levels.Length - 1, original + DescentRadius);
+                int lo = Math.Max(0, original - radius);
+                int hi = Math.Min(levels.Length - 1, original + radius);
                 for (int level = lo; level <= hi; level++)
                 {
                     if (level == original)

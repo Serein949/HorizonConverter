@@ -266,7 +266,8 @@ public static class TtxFile
     /// <c>compress_file</c> wrapper).
     /// </summary>
     public static EncodeResult Encode(byte[] rgba, int width, int height, string format, bool flip = false,
-        bool compress = true, Action<string>? status = null)
+        bool compress = true, Action<string>? status = null,
+        Codecs.AstcQuality astcQuality = Codecs.AstcQuality.Standard)
     {
         format = TextureFormats.Canonical(format);
 
@@ -298,7 +299,7 @@ public static class TtxFile
         int mips = 0;
         foreach (var (level, lw, lh) in MipChain.Levels(rgba, width, height, lastMax))
         {
-            parts.Add(EncodeLevel(level, lw, lh, fmt));
+            parts.Add(EncodeLevel(level, lw, lh, fmt, astcQuality));
             mips++;
         }
 
@@ -338,7 +339,7 @@ public static class TtxFile
         };
     }
 
-    private static byte[] EncodeLevel(byte[] rgba, int w, int h, string format)
+    private static byte[] EncodeLevel(byte[] rgba, int w, int h, string format, Codecs.AstcQuality astcQuality)
     {
         switch (format)
         {
@@ -410,7 +411,7 @@ public static class TtxFile
                             padded[i] = 255;
                     }
                     var dest = new byte[pw / bw * (ph / bh) * 16];
-                    AstcEncoder.Encode(padded, pw, ph, bw, bh, dest);
+                    AstcEncoder.Encode(padded, pw, ph, bw, bh, dest, astcQuality);
                     return dest;
                 }
 

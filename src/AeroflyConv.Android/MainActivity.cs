@@ -10,6 +10,7 @@ using ClipboardManager = Android.Content.ClipboardManager;
 using Android.Views;
 using Android.Widget;
 using AeroflyConv.Core;
+using AeroflyConv.Core.Codecs;
 using AeroflyConv.Core.Conversion;
 using AeroflyConv.Core.Textures;
 using Uri = Android.Net.Uri;
@@ -86,8 +87,10 @@ public class MainActivity : Activity
     private LinearLayout _llModes = null!;
     private LinearLayout _llFormat = null!;
     private LinearLayout _llSize = null!;
+    private LinearLayout _llQuality = null!;
     private LinearLayout _llFiles = null!;
     private LinearLayout _rowFormat = null!, _rowSize = null!, _rowFlip = null!, _rowCompress = null!, _rowTtcMips = null!;
+    private LinearLayout _rowQuality = null!;
     private LinearLayout _rowResultActions = null!;
     private LinearLayout _cardOptions = null!;
     private TextView _tvModeHint = null!;
@@ -109,12 +112,14 @@ public class MainActivity : Activity
     private PillGroup _modes = null!;
     private PillGroup _formats = null!;
     private PillGroup _sizes = null!;
+    private PillGroup _qualities = null!;
 
     private static readonly string[] FormatLabels = ["自动", "DXT1", "DXT5", "ETC2", "R8", "ASTC 6x6", "ASTC 5x5"];
     private static readonly string[] TTXFormats = ["dxt_auto", "dxt1", "dxt5", "etc2", "r8", "astc6x6", "astc5x5"];
     private static readonly string[] TtcFormats = ["dxt1", "dxt1", "dxt5", "etc2", "r8", "dxt1", "dxt1"];
     private static readonly string[] SizeLabels = ["匹配原尺寸", "4096", "2048", "1024", "源尺寸"];
     private static readonly int?[] SizeValues = [null, 4096, 2048, 1024, null];
+    private static readonly string[] QualityLabels = ["快速", "标准", "高质量"];
 
     private Uri? _outputTree;
     private bool _busy;
@@ -165,6 +170,11 @@ public class MainActivity : Activity
                 int fi = Array.IndexOf(TTXFormats, f.ToLowerInvariant());
                 if (fi >= 0) _formats.SetSelected(fi);
             }
+            if (Intent.GetStringExtra("quality") is { } q &&
+                AstcQualityNames.TryParse(q, out AstcQuality parsedQuality))
+            {
+                _qualities.SetSelected((int)parsedQuality);
+            }
             if (Intent.GetBooleanExtra("nocompress", false))
             {
                 _swCompress.Checked = false;
@@ -190,9 +200,11 @@ public class MainActivity : Activity
         _llModes = FindViewById<LinearLayout>(Resource.Id.llModes)!;
         _llFormat = FindViewById<LinearLayout>(Resource.Id.llFormat)!;
         _llSize = FindViewById<LinearLayout>(Resource.Id.llSize)!;
+        _llQuality = FindViewById<LinearLayout>(Resource.Id.llQuality)!;
         _llFiles = FindViewById<LinearLayout>(Resource.Id.llFiles)!;
         _rowFormat = FindViewById<LinearLayout>(Resource.Id.rowFormat)!;
         _rowSize = FindViewById<LinearLayout>(Resource.Id.rowSize)!;
+        _rowQuality = FindViewById<LinearLayout>(Resource.Id.rowQuality)!;
         _rowFlip = FindViewById<LinearLayout>(Resource.Id.rowFlip)!;
         _rowCompress = FindViewById<LinearLayout>(Resource.Id.rowCompress)!;
         _rowTtcMips = FindViewById<LinearLayout>(Resource.Id.rowTtcMips)!;
@@ -305,8 +317,9 @@ public class MainActivity : Activity
     {
         string[] visibleLabels = VisibleModeIndexes.Select(i => ModeLabels[i]).ToArray();
         _modes = new PillGroup(this, _llModes, visibleLabels, 0, _ => UpdateModeUi());
-        _formats = new PillGroup(this, _llFormat, FormatLabels, 0, _ => { });
+        _formats = new PillGroup(this, _llFormat, FormatLabels, 0, _ => UpdateQualityRow());
         _sizes = new PillGroup(this, _llSize, SizeLabels, 0, _ => { });
+        _qualities = new PillGroup(this, _llQuality, QualityLabels, 1, _ => { });
     }
 
     private void WireEvents()
@@ -369,7 +382,8 @@ public class MainActivity : Activity
             || _rowSize.Visibility == ViewStates.Visible
             || _rowFlip.Visibility == ViewStates.Visible
             || _rowCompress.Visibility == ViewStates.Visible
-            || _rowTtcMips.Visibility == ViewStates.Visible;
+            || _rowTtcMips.Visibility == ViewStates.Visible
+            || _rowQuality.Visibility == ViewStates.Visible;
         _cardOptions.Visibility = anyOption ? ViewStates.Visible : ViewStates.Gone;
 
         if (mode == 2)
@@ -384,6 +398,28 @@ public class MainActivity : Activity
         }
 
         _btnConvert.Text = "开始转换";
+        UpdateQualityRow();
+    }
+
+    /// <summary>
+    /// The quality tier only changes ASTC encoding, so the row is shown only for
+    /// PNG -> TTX with one of the ASTC output formats.
+    /// </summary>
+    private void UpdateQualityRow()
+    {
+        if (_rowQuality is null || _formats is null || _cardOptions is null)
+            return;
+
+        bool astc = RealMode == 2 && _formats.SelectedIndex >= 5;
+        _rowQuality.Visibility = astc ? ViewStates.Visible : ViewStates.Gone;
+
+        bool anyOption = _rowFormat.Visibility == ViewStates.Visible
+            || _rowSize.Visibility == ViewStates.Visible
+            || _rowFlip.Visibility == ViewStates.Visible
+            || _rowCompress.Visibility == ViewStates.Visible
+            || _rowTtcMips.Visibility == ViewStates.Visible
+            || astc;
+        _cardOptions.Visibility = anyOption ? ViewStates.Visible : ViewStates.Gone;
     }
 
     private void SetFormatVisibility(bool[] enabled)
@@ -419,6 +455,7 @@ public class MainActivity : Activity
         if (mode == 2)
         {
             options.TtxFormat = TTXFormats[_formats.SelectedIndex];
+            options.AstcQuality = (AstcQuality)_qualities.SelectedIndex;
         }
         else if (mode == 7)
         {
@@ -955,6 +992,7 @@ public class MainActivity : Activity
         editor.PutInt("mode", RealMode);
         editor.PutInt("format", _formats.SelectedIndex);
         editor.PutInt("size", _sizes.SelectedIndex);
+        editor.PutInt("quality", _qualities.SelectedIndex);
         editor.PutBoolean("flip", _swFlip.Checked);
         editor.PutBoolean("compress", _swCompress.Checked);
         editor.PutBoolean("ttcmips", _swTtcMips.Checked);
@@ -970,6 +1008,7 @@ public class MainActivity : Activity
         _modes.SetSelected(Math.Max(0, Array.IndexOf(VisibleModeIndexes, savedMode)));
         _formats.SetSelected(Math.Clamp(prefs.GetInt("format", 0), 0, FormatLabels.Length - 1));
         _sizes.SetSelected(Math.Clamp(prefs.GetInt("size", 0), 0, SizeLabels.Length - 1));
+        _qualities.SetSelected(Math.Clamp(prefs.GetInt("quality", 1), 0, QualityLabels.Length - 1));
         _swFlip.Checked = prefs.GetBoolean("flip", true);
         _swCompress.Checked = prefs.GetBoolean("compress", true);
         _swTtcMips.Checked = prefs.GetBoolean("ttcmips", true);

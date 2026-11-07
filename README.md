@@ -396,9 +396,37 @@ ASTC 贴图（CLI `--format astc6x6` / `astc5x5`，GUI 与手机端格式药丸�
 * 速度（1.21.1 优化后，含 mip 链与写盘）：2048² 约 **6 s**（6x6 / 5x5 / 4x4 / 8x8 都是 5.5–6.0 s），
   1024² 约 2.6 s，512² 约 1.2 s。
 
+#### 编码质量档位（1.21.2 新增）
+
+ASTC 编码可以在"速度 / 画质"之间选档，CLI 用 `--astc-quality`，手机端在「编码质量」一行选：
+
+```powershell
+AeroflyConv livery.png -f astc6x6 --astc-quality fast      # 快速
+AeroflyConv livery.png -f astc6x6 --astc-quality standard  # 标准（默认，与 1.21.1 完全一致）
+AeroflyConv livery.png -f astc6x6 --astc-quality high      # 高质量
+```
+
+实测（2048² 贴图，16 线程，含 mip 链与写盘）：
+
+| 档位 | 耗时 | 输出体积 | 画质 (PSNR) | 做法 |
+| --- | --- | --- | --- | --- |
+| 快速 fast | **2.5 s** | 494.9 KB | 41.66 dB | 只精修 3 个配置、1 轮迭代、权重窗口 ±1 |
+| 标准 standard | 5.6 s | 495.7 KB | 41.95 dB | 精修 8 个配置、2 轮迭代、权重窗口 ±2 |
+| 高质量 high | 12.0 s | 495.9 KB | 41.99 dB | 精修 16 个配置、2 轮迭代、权重窗口 ±3 |
+
+小图差距更小（固定的解码/压缩开销占比大）：512² 快速 1.0 s、标准 1.8 s、高质量 2.1 s；
+1024² 快速 1.6 s、标准 2.6 s、高质量 4.9 s。手机端默认「标准」，选项会被记住。
+
 ---
 
 ## 16. 版本记录
+
+### 1.21.2
+
+* **ASTC 编码质量档位**：新增 `fast` / `standard` / `high` 三档（CLI `--astc-quality`，手机端
+  「编码质量」药丸，仅在选择 ASTC 6x6 / 5x5 时出现）。2048² 贴图：快速 **2.5 s** / 41.66 dB，
+  标准 5.6 s / 41.95 dB（与 1.21.1 字节一致），高质量 12.0 s / 41.99 dB。
+* 版本号统一到 **1.21.2**（Alpha `versionCode 7`、Public `versionCode 4`）。
 
 ### 1.21.1
 
