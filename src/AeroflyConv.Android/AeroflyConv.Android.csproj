@@ -7,9 +7,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>com.aeroflyconv.app</ApplicationId>
-    <ApplicationVersion>7</ApplicationVersion>
-    <ApplicationDisplayVersion>1.21.2</ApplicationDisplayVersion>
-    <Version>1.21.2</Version>
+    <ApplicationVersion>8</ApplicationVersion>
+    <ApplicationDisplayVersion>1.21.3</ApplicationDisplayVersion>
+    <Version>1.21.3</Version>
     <Product>Aerofly 转换器 Alpha</Product>
     <AssemblyName>AeroflyConv.Android</AssemblyName>
     <RootNamespace>AeroflyConv.Android</RootNamespace>

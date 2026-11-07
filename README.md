@@ -338,18 +338,23 @@ Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
 ### 15.1 Android 应用
 
 `src/AeroflyConv.Android` 是一个 .NET for Android 原生应用（不是 MAUI，界面用 XML 布局），
-APK 在 `dist/v1.21.1/android/AeroflyConverter-Alpha-1.21.1.apk`（minSdk 24 / target 36）；
-精简版是 `AeroflyConverter-Public-1.21.1.apk`（只保留 PNG→TTX、WAV→TSB，可与 Alpha 共存）。
+APK 在 `dist/v1.21.3/android/AeroflyConverter-Alpha-1.21.3.apk`（minSdk 24 / target 36）；
+精简版是 `AeroflyConverter-Public-1.21.3.apk`（只保留 PNG→TTX、WAV→TSB，可与 Alpha 共存）。
 
-安装：`adb install -r AeroflyConverter-Alpha-1.21.1.apk`，或拷到手机后用文件管理器点击安装。
+安装：`adb install -r AeroflyConverter-Alpha-1.21.3.apk`，或拷到手机后用文件管理器点击安装。
 
-**界面（全中文）**：
+**界面（1.21.3 起为 iOS"流体玻璃"风格，全中文）**：
 
-* 顶部**模式**药丸：自动识别 / TTX→PNG / PNG→TTX / TSB→WAV / WAV→TSB / TM→TXT / TTC→PNG / PNG→TTC；
-* **文件**卡片：`添加文件`（可多选）、`添加文件夹`（递归扫描）、`清空`，逐个文件可点 ✕ 移除；
-* **选项**卡片（按模式自动显示）：格式（自动 / DXT1 / DXT5 / ETC2 / R8 / ASTC 6x6 / ASTC 5x5）、贴图尺寸
-  （匹配原尺寸 / 4096 / 2048 / 1024 / 源尺寸）、垂直翻转、压缩 TTX（LZHAM）、TTC 多级贴图；
-* **输出**卡片：默认 `Download/AeroflyConv`，可改成任意文件夹（SAF 授权，重启后保留）；
+* 深色壁纸 + 柔和青色/蓝色光晕，内容放在 3 张半透明玻璃卡片里（**文件 / 选项 / 日志**）；
+* 顶部**模式**是无卡片的分段控件（玻璃胶囊里滑动选择），当前模式的说明文字直接跟在下面；
+* **文件**卡片：`添加文件`（可多选）、`文件夹`（递归扫描）、`清空`，逐个文件可点 ✕ 移除，
+  底部一行是**输出位置**（`Download/AeroflyConv` 或自选文件夹，点「更改」）；
+* **选项**卡片（按模式自动显示）：格式（自动 / DXT1 / DXT5 / ETC2 / R8 / ASTC 6x6 / ASTC 5x5）、
+  贴图尺寸（匹配原尺寸 / 4096 / 2048 / 1024 / 源尺寸）、编码质量（ASTC 专用）、垂直翻转、
+  压缩 TTX（LZHAM）、TTC 多级贴图；
+* **日志**默认折叠，点标题栏展开（箭头会转），展开状态被记住；转换出现失败时自动展开；
+  头部有行数与「复制 / 清空」，每行按级别上色（✓ 成功 / ✕ 失败 / ! 警告 / · 普通）；
+* `开始转换` 是渐变胶囊按钮，转换中变成「取消」，下方居中显示进度状态；
 * 转换后出现 `打开结果` / `分享`；
 * 所有设置存 `SharedPreferences`，下次启动沿用。
 
@@ -420,6 +425,16 @@ AeroflyConv livery.png -f astc6x6 --astc-quality high      # 高质量
 ---
 
 ## 16. 版本记录
+
+### 1.21.3
+
+* **手机端全新界面（iOS"流体玻璃"设计语言）**：页面从 5 张卡片精简为 3 张（文件 / 选项 / 日志），
+  模式改成顶部分段控件，输出位置并入文件卡片，日志默认折叠（记住展开状态，失败时自动展开），
+  按钮统一成玻璃胶囊，`开始转换` 用渐变胶囊 + 居中状态文字。
+* 新增一组玻璃化 drawable（`bg_window` / `bg_glass` / `bg_track` / `bg_pill_on` / `bg_pill_off` /
+  `bg_primary` / `bg_ghost` / `bg_ghost_small` / `bg_log` / `bg_file_row`），纯 XML 渐变 + 半透明，
+  不依赖 RenderEffect 或第三方库。
+* 版本号统一到 **1.21.3**（Alpha `versionCode 8`、Public `versionCode 5`）。
 
 ### 1.21.2
 

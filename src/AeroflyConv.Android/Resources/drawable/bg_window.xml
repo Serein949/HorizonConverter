@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soft "wallpaper" behind the glass: near-black base with two cool glows. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#05070C" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:centerX="0.16"
+                android:centerY="0.06"
+                android:endColor="#0000B8FF"
+                android:gradientRadius="620dp"
+                android:startColor="#4A00B8FF"
+                android:type="radial" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:centerX="0.92"
+                android:centerY="0.72"
+                android:endColor="#004C6BFF"
+                android:gradientRadius="560dp"
+                android:startColor="#3D3E7BFF"
+                android:type="radial" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:endColor="#00000000"
+                android:startColor="#26000000" />
+        </shape>
+    </item>
+</layer-list>

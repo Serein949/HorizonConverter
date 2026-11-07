@@ -40,7 +40,7 @@ public class MainActivity : Activity
     private const int RequestPickOutput = 1003;
     private const string Prefs = "aeroflyconv";
 
-    private static readonly Color Bg = Color.ParseColor("#0B0E14");
+    private static readonly Color Bg = Color.ParseColor("#05070C");
     private static readonly Color Fg = Color.ParseColor("#F8FAFD");
     private static readonly Color Muted = Color.ParseColor("#7C8797");
     private static readonly Color Soft = Color.ParseColor("#C6CEDA");
@@ -99,6 +99,8 @@ public class MainActivity : Activity
     private TextView _tvStatus = null!;
     private TextView _tvLog = null!;
     private TextView _tvLogCount = null!;
+    private LinearLayout _rowLogHeader = null!;
+    private TextView _tvLogChevron = null!;
     private readonly System.Text.StringBuilder _logText = new();
     private int _logCount;
     private TextView _tvOutput = null!;
@@ -135,7 +137,9 @@ public class MainActivity : Activity
     {
         base.OnCreate(savedInstanceState);
         Title = ProductLabel;
-        Window?.SetStatusBarColor(Bg);
+        // let the wallpaper gradient run under the status bar; the insets listener pads the content
+        Window?.AddFlags(WindowManagerFlags.DrawsSystemBarBackgrounds);
+        Window?.SetStatusBarColor(Color.Transparent);
         Window?.SetNavigationBarColor(Bg);
 
         SetContentView(Resource.Layout.activity_main);
@@ -215,6 +219,9 @@ public class MainActivity : Activity
         _tvStatus = FindViewById<TextView>(Resource.Id.tvStatus)!;
         _tvLog = FindViewById<TextView>(Resource.Id.tvLog)!;
         _tvLogCount = FindViewById<TextView>(Resource.Id.tvLogCount)!;
+        _rowLogHeader = FindViewById<LinearLayout>(Resource.Id.rowLogHeader)!;
+        _tvLogChevron = FindViewById<TextView>(Resource.Id.tvLogChevron)!;
+        _rowLogHeader.Click += (_, _) => ToggleLog();
         FindViewById<TextView>(Resource.Id.btnLogCopy)!.Click += (_, _) => CopyLog();
         FindViewById<TextView>(Resource.Id.btnLogClear)!.Click += (_, _) => ClearLog();
         _tvOutput = FindViewById<TextView>(Resource.Id.tvOutput)!;
@@ -238,11 +245,11 @@ public class MainActivity : Activity
         }
 
         // mode hint line under the pills
-        _tvModeHint = new TextView(this) { TextSize = 11 };
-        _tvModeHint.SetTextColor(Color.ParseColor("#5C6779"));
+        _tvModeHint = new TextView(this) { TextSize = 11.5f };
+        _tvModeHint.SetTextColor(Color.ParseColor("#7E8B9C"));
         var hintParams = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
-        hintParams.TopMargin = Dp(8);
+        hintParams.TopMargin = Dp(10);
         FindViewById<LinearLayout>(Resource.Id.cardMode)!.AddView(_tvModeHint, hintParams);
 
         foreach (Button b in new[] { FindViewById<Button>(Resource.Id.btnAddFiles)!, FindViewById<Button>(Resource.Id.btnAddFolder)!, FindViewById<Button>(Resource.Id.btnClear)!, FindViewById<Button>(Resource.Id.btnPickOutput)!, FindViewById<Button>(Resource.Id.btnOpen)!, FindViewById<Button>(Resource.Id.btnShare)! })
@@ -643,13 +650,13 @@ public class MainActivity : Activity
             Picked item = _picked[i];
             var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
             row.SetBackgroundResource(Resource.Drawable.bg_file_row);
-            row.SetPadding(Dp(10), Dp(8), Dp(6), Dp(8));
+            row.SetPadding(Dp(12), Dp(9), Dp(6), Dp(9));
             var rowParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
             rowParams.TopMargin = Dp(6);
 
             var status = new TextView(this) { Text = "\u00b7", TextSize = 14 };
-            status.SetTextColor(Color.ParseColor("#46525F"));
+            status.SetTextColor(Color.ParseColor("#7E8B9C"));
             status.Gravity = GravityFlags.Center;
             status.SetPadding(0, 0, Dp(8), 0);
             row.AddView(status);
@@ -820,6 +827,10 @@ public class MainActivity : Activity
             SetStatus(failed == 0
                 ? $"已转换 {ok} 个文件"
                 : $"成功 {ok} 个，失败 {failed} 个");
+
+            // a failure is worth seeing: open the log panel so the reason is on screen
+            if (failed > 0 && _scrollLog.Visibility != ViewStates.Visible)
+                SetLogOpen(true);
         });
 
         _busy = false;
@@ -1027,6 +1038,7 @@ public class MainActivity : Activity
         }
 
         _tvOutput.Text = OutputLabel();
+        SetLogOpen(prefs.GetBoolean("logopen", false));
         RenderFiles();
     }
 
@@ -1084,6 +1096,18 @@ public class MainActivity : Activity
         _logCount = 0;
         _tvLogCount.Text = "";
     });
+
+    /// <summary>Expands / collapses the log panel; the choice is remembered.</summary>
+    private void ToggleLog() => SetLogOpen(_scrollLog.Visibility != ViewStates.Visible);
+
+    private void SetLogOpen(bool open)
+    {
+        _scrollLog.Visibility = open ? ViewStates.Visible : ViewStates.Gone;
+        _tvLogChevron.Text = open ? "\u2304" : "\u203a";
+
+        var prefs = GetSharedPreferences(Prefs, FileCreationMode.Private);
+        prefs?.Edit()?.PutBoolean("logopen", open)?.Apply();
+    }
 
     private void CopyLog()
     {
@@ -1244,7 +1268,7 @@ public class MainActivity : Activity
                 pill.Focusable = true;
                 var lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
-                lp.RightMargin = Dp(activity, 8);
+                lp.RightMargin = Dp(activity, 6);
                 pill.Click += (_, _) =>
                 {
                     if (!_enabled[index]) return;
@@ -1269,7 +1293,7 @@ public class MainActivity : Activity
             {
                 bool on = i == index;
                 _pills[i].SetBackgroundResource(on ? Resource.Drawable.bg_pill_on : Resource.Drawable.bg_pill_off);
-                _pills[i].SetTextColor(on ? Color.ParseColor("#00B8FF") : Color.ParseColor("#9AA4B2"));
+                _pills[i].SetTextColor(on ? Color.ParseColor("#8FE4FF") : Color.ParseColor("#C3CEDA"));
             }
             ScrollToSelected();
         }
