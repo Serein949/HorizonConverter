@@ -1,11 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/rootScroll"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_window"
-    android:fillViewport="true"
-    android:scrollbars="none">
+    android:background="#05070C">
+
+    <!-- animated aurora / light layer -->
+    <AeroflyConv.Android.AuroraView
+        android:id="@+id/aurora"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <ScrollView
+        android:id="@+id/rootScroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent"
+        android:fillViewport="true"
+        android:scrollbars="none">
 
     <LinearLayout
         android:orientation="vertical"
@@ -630,4 +641,5 @@
             </ScrollView>
         </LinearLayout>
     </LinearLayout>
-</ScrollView>
+    </ScrollView>
+</FrameLayout>

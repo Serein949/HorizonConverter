@@ -110,6 +110,7 @@ public class MainActivity : Activity
     private Switch _swTtcMips = null!;
     private Button _btnConvert = null!;
     private ScrollView _scrollLog = null!;
+    private AuroraView _aurora = null!;
 
     private PillGroup _modes = null!;
     private PillGroup _formats = null!;
@@ -197,10 +198,24 @@ public class MainActivity : Activity
         AcceptIncoming(intent);
     }
 
+    protected override void OnResume()
+    {
+        base.OnResume();
+        _aurora?.Resume();
+    }
+
+    protected override void OnPause()
+    {
+        // stop the 60 fps background while the app is not on screen (battery, no wake locks)
+        _aurora?.Pause();
+        base.OnPause();
+    }
+
     // ------------------------------------------------------------------ views
 
     private void BindViews()
     {
+        _aurora = FindViewById<AuroraView>(Resource.Id.aurora)!;
         _llModes = FindViewById<LinearLayout>(Resource.Id.llModes)!;
         _llFormat = FindViewById<LinearLayout>(Resource.Id.llFormat)!;
         _llSize = FindViewById<LinearLayout>(Resource.Id.llSize)!;

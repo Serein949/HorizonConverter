@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 import sys
 
+import colorsys
+
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -59,21 +61,48 @@ def vertical_gradient(size, top, bottom):
     return grad.resize((max(1, w), max(1, h)))
 
 
-def wallpaper():
+# Mirrors AuroraView.cs: same blob speeds/phases so the preview shows the real motion.
+BLOBS = [
+    # speedX, speedY, phaseX, phaseY, radius, hue offset, alpha
+    (0.13, 0.09, 0.0, 1.1, 0.58, 0, 0.32),
+    (0.09, 0.15, 2.1, 0.4, 0.50, 52, 0.27),
+    (0.17, 0.11, 4.0, 2.7, 0.44, 118, 0.25),
+    (0.07, 0.19, 1.3, 3.9, 0.52, 186, 0.23),
+    (0.21, 0.13, 3.4, 5.2, 0.34, 248, 0.20),
+    (0.11, 0.23, 5.6, 1.8, 0.30, 310, 0.18),
+]
+
+
+def aurora(t: float) -> Image.Image:
+    """Additive colour blobs + vignette, matching AuroraView at time t (seconds)."""
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     img = np.zeros((H, W, 3), dtype=np.float32)
     img[:] = (5, 7, 12)
+    shorter = float(min(W, H))
+    cx, cy = W * 0.5, H * 0.5
 
-    def glow(cx, cy, radius, colour, strength):
-        r = np.sqrt((xx - cx * W) ** 2 + (yy - cy * H) ** 2)
-        falloff = np.clip(1.0 - r / radius, 0.0, 1.0) ** 2.2
-        return np.array(colour, dtype=np.float32) * (falloff * strength)[..., None]
+    for speed_x, speed_y, phase_x, phase_y, radius_frac, hue_offset, alpha in BLOBS:
+        bx = cx + W * 0.42 * np.sin(t * speed_x * 2 * np.pi + phase_x)
+        by = cy + H * 0.40 * np.sin(t * speed_y * 2 * np.pi + phase_y)
+        rad = shorter * radius_frac * (0.88 + 0.12 * np.sin(t * 0.18 * 2 * np.pi + phase_x))
+        hue = ((t * 360.0 / 48.0 + hue_offset) % 360.0) / 360.0
+        rgb = colorsys.hsv_to_rgb(hue, 0.80, 0.72)
+        r = np.sqrt((xx - bx) ** 2 + (yy - by) ** 2)
+        falloff = np.clip(1.0 - r / max(1.0, rad), 0.0, 1.0)
+        img += np.array(rgb, dtype=np.float32) * 255.0 * (falloff * alpha)[..., None]
 
-    img += glow(0.16, 0.06, 620 * S, (0, 184, 255), 0.34)
-    img += glow(0.92, 0.74, 560 * S, (62, 123, 255), 0.26)
-    img = np.clip(img, 0, 255).astype(np.uint8)
-    return Image.fromarray(img, "RGB")
+    # sweeping beam
+    angle = np.deg2rad(t * 6.0)
+    proj = (xx - cx) * np.sin(angle) + (yy - cy) * np.cos(angle)
+    band = np.exp(-((proj / (shorter * 0.28)) ** 2)) * 26.0
+    img += band[..., None] * np.array([214, 245, 255], dtype=np.float32) / 255.0
 
+    # vignette
+    rv = np.sqrt((xx - cx) ** 2 + (yy - cy * 1.02) ** 2) / (max(W, H) * 0.78)
+    dark = np.clip((rv - 0.58) / 0.42, 0.0, 1.0) * 0.59
+    img = img * (1.0 - dark)[..., None] + np.array([3, 5, 9], dtype=np.float32) * dark[..., None]
+
+    return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8), "RGB")
 
 def frost(base: Image.Image, box, radius):
     x0, y0, x1, y1 = box
@@ -138,8 +167,8 @@ def draw_switch(d, x, cy, on=True):
     d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(245, 250, 255))
 
 
-def build(demo_files: bool) -> Image.Image:
-    base = wallpaper().convert("RGBA")
+def build(demo_files: bool, t: float = 0.0) -> Image.Image:
+    base = aurora(t).convert("RGBA")
     content = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(content, "RGBA")
     cards: list[tuple] = []
@@ -305,6 +334,7 @@ def build(demo_files: bool) -> Image.Image:
 if __name__ == "__main__":
     out_dir = sys.argv[1] if len(sys.argv) > 1 else "."
     os.makedirs(out_dir, exist_ok=True)
-    build(False).save(os.path.join(out_dir, "preview_empty.png"))
-    build(True).save(os.path.join(out_dir, "preview_files.png"))
+    build(True, 0.0).save(os.path.join(out_dir, "preview_files.png"))
+    build(True, 11.0).save(os.path.join(out_dir, "preview-files-t11.png"))
+    build(False, 22.0).save(os.path.join(out_dir, "preview-empty-t22.png"))
     print("ok")

@@ -338,14 +338,14 @@ Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
 ### 15.1 Android 应用
 
 `src/AeroflyConv.Android` 是一个 .NET for Android 原生应用（不是 MAUI，界面用 XML 布局），
-APK 在 `dist/v1.21.3/android/AeroflyConverter-Alpha-1.21.3.apk`（minSdk 24 / target 36）；
-精简版是 `AeroflyConverter-Public-1.21.3.apk`（只保留 PNG→TTX、WAV→TSB，可与 Alpha 共存）。
+APK 在 `dist/v1.21.4/android/AeroflyConverter-Alpha-1.21.4.apk`（minSdk 24 / target 36）；
+精简版是 `AeroflyConverter-Public-1.21.4.apk`（只保留 PNG→TTX、WAV→TSB，可与 Alpha 共存）。
 
-安装：`adb install -r AeroflyConverter-Alpha-1.21.3.apk`，或拷到手机后用文件管理器点击安装。
+安装：`adb install -r AeroflyConverter-Alpha-1.21.4.apk`，或拷到手机后用文件管理器点击安装。
 
 **界面（1.21.3 起为 iOS"流体玻璃"风格，全中文）**：
 
-* 深色壁纸 + 柔和青色/蓝色光晕，内容放在 3 张半透明玻璃卡片里（**文件 / 选项 / 日志**）；
+* 动态极光背景（彩色光团流动 + 扫过的光束 + 漂移光点，色相 48 秒转一圈），内容放在 3 张半透明玻璃卡片里（**文件 / 选项 / 日志**）；
 * 顶部**模式**是无卡片的分段控件（玻璃胶囊里滑动选择），当前模式的说明文字直接跟在下面；
 * **文件**卡片：`添加文件`（可多选）、`文件夹`（递归扫描）、`清空`，逐个文件可点 ✕ 移除，
   底部一行是**输出位置**（`Download/AeroflyConv` 或自选文件夹，点「更改」）；
@@ -425,6 +425,15 @@ AeroflyConv livery.png -f astc6x6 --astc-quality high      # 高质量
 ---
 
 ## 16. 版本记录
+
+### 1.21.4
+
+* **手机端动画背景**：新增 `AuroraView.cs`（纯 Canvas，无第三方库）——6 个彩色光团沿利萨如轨迹
+  缓慢游动并用叠加混合，半径会呼吸，色相每 48 秒转一圈；一道光束约 60 秒扫过一圈；两个漂移高光点；
+  四周渐晕保证文字对比度。
+* 省电处理：仅在可见时绘制（`OnPause` 停 / `OnResume` 续），系统开启"减少动画"时只画静态一帧。
+* 玻璃卡片加 `elevation` 投影（8–12dp），层次更清楚。
+* 版本号统一到 **1.21.4**（Alpha `versionCode 9`、Public `versionCode 6`）。
 
 ### 1.21.3
 
