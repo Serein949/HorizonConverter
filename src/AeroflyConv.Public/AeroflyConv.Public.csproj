@@ -13,9 +13,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <DefineConstants>$(DefineConstants);PUBLIC_BUILD</DefineConstants>
     <ApplicationId>com.aeroflyconv.converter</ApplicationId>
-    <ApplicationVersion>2</ApplicationVersion>
-    <ApplicationDisplayVersion>1.21</ApplicationDisplayVersion>
-    <Version>1.21</Version>
+    <ApplicationVersion>3</ApplicationVersion>
+    <ApplicationDisplayVersion>1.21.1</ApplicationDisplayVersion>
+    <Version>1.21.1</Version>
     <Product>Aerofly 转换器</Product>
     <AssemblyName>AeroflyConv.Public</AssemblyName>
     <RootNamespace>AeroflyConv.Android</RootNamespace>

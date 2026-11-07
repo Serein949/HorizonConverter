@@ -160,7 +160,7 @@ dotnet run --project tools/CodecCheck   # 块压缩编解码 vs texture2ddecoder
   变体，原版 Python 工具同样无法读取；本版给出明确提示。转换器自己生成的 TTC 正常工作。
 * **BC5 法线贴图**：本版按法线贴图规范重建 Z 通道（正确）；原版总是用零通道推导 Z，
   所以两者蓝色通道不同（红/绿通道逐字节一致）。这是有意修正。
-* **ASTC 编码速度**：2048² 贴图约 30 s（单分区搜索 + 权重网格枚举），比 DXT1 慢两个数量级；
+* **ASTC 编码速度**：2048² 贴图约 6 s（1.21.1 起；1.21 约 30 s），仍比 DXT1 慢一个数量级；
   手机上更慢。只影响 PNG→ASTC，不影响解码与其他格式。
 * 输入图片支持 PNG/JPG/BMP/GIF/TGA/WebP（ImageSharp）。
 
@@ -338,10 +338,10 @@ Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
 ### 15.1 Android 应用
 
 `src/AeroflyConv.Android` 是一个 .NET for Android 原生应用（不是 MAUI，界面用 XML 布局），
-APK 在 `dist/v1.21/android/AeroflyConverter-Alpha-1.21.apk`（minSdk 24 / target 36）；
-精简版是 `AeroflyConverter-Public-1.21.apk`（只保留 PNG→TTX、WAV→TSB，可与 Alpha 共存）。
+APK 在 `dist/v1.21.1/android/AeroflyConverter-Alpha-1.21.1.apk`（minSdk 24 / target 36）；
+精简版是 `AeroflyConverter-Public-1.21.1.apk`（只保留 PNG→TTX、WAV→TSB，可与 Alpha 共存）。
 
-安装：`adb install -r AeroflyConverter-Alpha-1.21.apk`，或拷到手机后用文件管理器点击安装。
+安装：`adb install -r AeroflyConverter-Alpha-1.21.1.apk`，或拷到手机后用文件管理器点击安装。
 
 **界面（全中文）**：
 
@@ -391,13 +391,20 @@ ASTC 贴图（CLI `--format astc6x6` / `astc5x5`，GUI 与手机端格式药丸�
 * 端点用交替最小二乘拟合，权重用坐标下降取整，评估误差用解码器的精确算式；
 * 常数块自动写成 void-extent（无损）；
 * 与官方解码器 `texture2ddecoder` 交叉验证：所有块**逐字节一致**，无一非法块；
-* 画质：真实贴图 41–51 dB（`callsign_bump` 50.87 dB、`callsign_light` 42.48 dB），
+* 画质：真实贴图 41–51 dB（`callsign_bump` 50.84 dB、`callsign_light` 42.32 dB），
   通道完全独立的照片类内容约 29–30 dB（单分区上限，官方 astcenc 用多分区可达 40 dB+）；
-* 速度：2048² 约 30 s，512² 约 0.5–1.2 s。
+* 速度（1.21.1 优化后）：2048² 约 **6 s**（6x6 / 5x5 / 4x4 / 8x8 都是 5.5–6.0 s），512² 约 0.1–0.2 s。
 
 ---
 
 ## 16. 版本记录
+
+### 1.21.1
+
+* **ASTC 编码提速 5 倍**：2048² 贴图 31.3 s → **6.0 s**（画质 41.99 dB → 41.95 dB，几乎无损）。
+  做法：先给全部配置做廉价打分、只对前 8 名做完整优化；权重层枚举限制在当前位置 ±2 级；
+  端点细化与权重更新都加了"超过当前最优即提前退出"的剪枝。
+* 版本号统一到 **1.21.1**（Alpha `versionCode 6`、Public `versionCode 3`）。
 
 ### 1.21
 

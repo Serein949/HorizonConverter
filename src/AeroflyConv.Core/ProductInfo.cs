@@ -13,7 +13,7 @@ public static class ProductInfo
     public const string Edition = "Alpha";
 
     /// <summary>Numeric version (also stamped into the assemblies).</summary>
-    public const string Version = "1.21";
+    public const string Version = "1.21.1";
 
     /// <summary>"Aerofly 转换器 Alpha"</summary>
     public const string FullName = Name + " " + Edition;

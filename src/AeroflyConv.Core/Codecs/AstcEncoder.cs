@@ -29,6 +29,15 @@ public static class AstcEncoder
     private const int MaxGridPoints = 144;
     private const int MaxConfigs = 16;
 
+    // How many configurations survive the cheap pre-pass and get the full
+    // endpoint/weight optimization. Encoding every configuration fully costs
+    // several times more for a PSNR difference well below 0.1 dB.
+    private const int RefineConfigCount = 8;
+
+    // Weight search window (in quantized level indices) around the projected
+    // optimum. Full enumeration over 32 levels costs ~6x more for ~0.05 dB.
+    private const int DescentRadius = 2;
+
     private static readonly int[] Levels1 = { 0, 64 };
 
     private static readonly int[] Levels2 = { 0, 21, 43, 64 };
@@ -229,21 +238,43 @@ public static class AstcEncoder
         }
         else
         {
-            long bestError = long.MaxValue;
+            // Two-phase search: score every configuration with a cheap
+            // projection pass, then run the expensive endpoint/weight
+            // optimization only on the most promising ones.
+            Span<long> scores = stackalloc long[MaxConfigs];
             for (int c = 0; c < configCount; c++)
+                scores[c] = EvaluateConfig(pixels, blockWidth, blockHeight, channels, configs[c]);
+
+            int refineCount = Math.Min(RefineConfigCount, configCount);
+            long bestError = long.MaxValue;
+            for (int pick = 0; pick < refineCount; pick++)
             {
+                int bestIndex = -1;
+                for (int c = 0; c < configCount; c++)
+                {
+                    if (scores[c] < 0)
+                        continue;
+                    if (bestIndex < 0 || scores[c] < scores[bestIndex])
+                        bestIndex = c;
+                }
+
+                if (bestIndex < 0)
+                    break;
+
                 long error = EncodeConfig(
                     pixels,
                     blockWidth,
                     blockHeight,
                     channels,
-                    configs[c],
+                    configs[bestIndex],
                     block);
                 if (error < bestError)
                 {
                     bestError = error;
                     block.CopyTo(bestBlock);
                 }
+
+                scores[bestIndex] = -1;
             }
 
             if (bestError == long.MaxValue)
@@ -350,30 +381,9 @@ public static class AstcEncoder
         Span<byte> coef2 = stackalloc byte[MaxPixels];
         Span<byte> coef3 = stackalloc byte[MaxPixels];
 
-        for (int t = 0, p = 0; t < blockHeight; t++)
-        {
-            for (int s = 0; s < blockWidth; s++, p++)
-            {
-                int gs = (ds * s * (gw - 1) + 32) >> 6;
-                int gt = (dt * t * (gh - 1) + 32) >> 6;
-                int fs = gs & 0xf;
-                int ft = gt & 0xf;
-                int v = (gs >> 4) + (gt >> 4) * gw;
-                int w11 = (fs * ft + 8) >> 4;
-                int w10 = ft - w11;
-                int w01 = fs - w11;
-                int w00 = 16 - fs - ft + w11;
-
-                idx0[p] = (byte)v;
-                idx1[p] = (byte)(v + 1);
-                idx2[p] = (byte)(v + gw);
-                idx3[p] = (byte)(v + gw + 1);
-                coef0[p] = (byte)w00;
-                coef1[p] = (byte)w01;
-                coef2[p] = (byte)w10;
-                coef3[p] = (byte)w11;
-            }
-        }
+        BuildTables(
+            blockWidth, blockHeight, gw, gh, ds, dt,
+            idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3);
 
         // Affected-pixel lists, so coordinate descent only touches pixels that
         // actually use the grid point being changed.
@@ -443,6 +453,81 @@ public static class AstcEncoder
         }
 
         EmitBlock(outBlock, channels, config, grid, levels, e0, e1);
+        return ComputeError(
+            pixels, pixelCount, channels, e0, e1, grid, levels,
+            idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3, weights);
+    }
+
+    private static void BuildTables(
+        int blockWidth, int blockHeight, int gw, int gh, int ds, int dt,
+        Span<byte> idx0, Span<byte> idx1, Span<byte> idx2, Span<byte> idx3,
+        Span<byte> coef0, Span<byte> coef1, Span<byte> coef2, Span<byte> coef3)
+    {
+        for (int t = 0, p = 0; t < blockHeight; t++)
+        {
+            for (int s = 0; s < blockWidth; s++, p++)
+            {
+                int gs = (ds * s * (gw - 1) + 32) >> 6;
+                int gt = (dt * t * (gh - 1) + 32) >> 6;
+                int fs = gs & 0xf;
+                int ft = gt & 0xf;
+                int v = (gs >> 4) + (gt >> 4) * gw;
+                int w11 = (fs * ft + 8) >> 4;
+                int w10 = ft - w11;
+                int w01 = fs - w11;
+                int w00 = 16 - fs - ft + w11;
+
+                idx0[p] = (byte)v;
+                idx1[p] = (byte)(v + 1);
+                idx2[p] = (byte)(v + gw);
+                idx3[p] = (byte)(v + gw + 1);
+                coef0[p] = (byte)w00;
+                coef1[p] = (byte)w01;
+                coef2[p] = (byte)w10;
+                coef3[p] = (byte)w11;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Cheap score for a configuration: min/max endpoints, one projection of the
+    /// weight grid, no coordinate descent. Used to rank configurations before
+    /// the full optimization pass.
+    /// </summary>
+    private static long EvaluateConfig(
+        ReadOnlySpan<byte> pixels, int blockWidth, int blockHeight, int channels, in Config config)
+    {
+        int pixelCount = blockWidth * blockHeight;
+        int gw = config.Gw;
+        int gh = config.Gh;
+        ReadOnlySpan<int> levels = LevelsForBits(config.Bits);
+
+        int ds = (1024 + blockWidth / 2) / (blockWidth - 1);
+        int dt = (1024 + blockHeight / 2) / (blockHeight - 1);
+
+        Span<byte> idx0 = stackalloc byte[MaxPixels];
+        Span<byte> idx1 = stackalloc byte[MaxPixels];
+        Span<byte> idx2 = stackalloc byte[MaxPixels];
+        Span<byte> idx3 = stackalloc byte[MaxPixels];
+        Span<byte> coef0 = stackalloc byte[MaxPixels];
+        Span<byte> coef1 = stackalloc byte[MaxPixels];
+        Span<byte> coef2 = stackalloc byte[MaxPixels];
+        Span<byte> coef3 = stackalloc byte[MaxPixels];
+
+        BuildTables(
+            blockWidth, blockHeight, gw, gh, ds, dt,
+            idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3);
+
+        Span<int> grid = stackalloc int[MaxGridPoints + 16];
+        Span<int> weights = stackalloc int[MaxPixels];
+        Span<int> e0 = stackalloc int[4];
+        Span<int> e1 = stackalloc int[4];
+
+        InitEndpoints(pixels, pixelCount, channels, e0, e1);
+        ProjectGrid(
+            pixels, pixelCount, channels, e0, e1, idx0, idx1, idx2, idx3,
+            coef0, coef1, coef2, coef3, levels, grid);
+
         return ComputeError(
             pixels, pixelCount, channels, e0, e1, grid, levels,
             idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3, weights);
@@ -634,7 +719,13 @@ public static class AstcEncoder
                     affStart, affPixels);
                 int best = original;
 
-                for (int level = 0; level < levels.Length; level++)
+                // Only levels near the projected optimum are considered: the
+                // error curve for a single grid point is unimodal enough that
+                // a window of 2*DescentRadius+1 levels loses ~0.05 dB while
+                // cutting the search by up to 6x.
+                int lo = Math.Max(0, original - DescentRadius);
+                int hi = Math.Min(levels.Length - 1, original + DescentRadius);
+                for (int level = lo; level <= hi; level++)
                 {
                     if (level == original)
                         continue;
@@ -642,7 +733,7 @@ public static class AstcEncoder
                     long error = AffectedError(
                         g, pixels, channels, e0, e1, grid, weights, levels,
                         idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3,
-                        affStart, affPixels);
+                        affStart, affPixels, bestError);
                     if (error < bestError)
                     {
                         bestError = error;
@@ -668,7 +759,8 @@ public static class AstcEncoder
         ReadOnlySpan<byte> idx2, ReadOnlySpan<byte> idx3,
         ReadOnlySpan<byte> coef0, ReadOnlySpan<byte> coef1,
         ReadOnlySpan<byte> coef2, ReadOnlySpan<byte> coef3,
-        ReadOnlySpan<int> affStart, ReadOnlySpan<int> affPixels)
+        ReadOnlySpan<int> affStart, ReadOnlySpan<int> affPixels,
+        long pruneAbove = long.MaxValue)
     {
         _ = weights;
         long error = 0;
@@ -678,6 +770,8 @@ public static class AstcEncoder
             int p = affPixels[k];
             int weight = PixelWeight(p, grid, levels, idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3);
             error += ErrorAt(p, channels, e0, e1, weight, pixels);
+            if (error >= pruneAbove)
+                return pruneAbove;
         }
 
         return error;
@@ -736,21 +830,30 @@ public static class AstcEncoder
             int best0 = base0;
             int best1 = base1;
 
-            for (int d0 = -1; d0 <= 1; d0++)
+            // Centre first so the neighbours can prune early: most refinements
+            // lose against the least-squares fit within a handful of pixels.
+            ReadOnlySpan<int> offsets = stackalloc int[] { 0, 1, -1 };
+            for (int i0 = 0; i0 < 3; i0++)
             {
-                int r0 = Clamp255(base0 + d0);
-                for (int d1 = -1; d1 <= 1; d1++)
+                int r0 = Clamp255(base0 + offsets[i0]);
+                for (int i1 = 0; i1 < 3; i1++)
                 {
-                    int r1 = Clamp255(base1 + d1);
+                    int r1 = Clamp255(base1 + offsets[i1]);
                     long error = 0;
+                    bool pruned = false;
                     for (int p = 0; p < pixelCount; p++)
                     {
                         int value = SelectColor(r0, r1, weights[p]);
                         int delta = value - pixels[p * 4 + ch];
                         error += delta * delta;
+                        if (error >= bestError)
+                        {
+                            pruned = true;
+                            break;
+                        }
                     }
 
-                    if (error < bestError)
+                    if (!pruned && error < bestError)
                     {
                         bestError = error;
                         best0 = r0;
