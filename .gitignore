@@ -9,3 +9,5 @@ tools/CodecCheck/*.bin
 bench_out/
 tests/vectors/_verify_tmp/
 docs/shot_trace.txt
+tmp/
+*_preview_*.png
