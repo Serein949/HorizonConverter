@@ -13,9 +13,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <DefineConstants>$(DefineConstants);PUBLIC_BUILD</DefineConstants>
     <ApplicationId>com.aeroflyconv.converter</ApplicationId>
-    <ApplicationVersion>6</ApplicationVersion>
-    <ApplicationDisplayVersion>1.21.4</ApplicationDisplayVersion>
-    <Version>1.21.4</Version>
+    <ApplicationVersion>7</ApplicationVersion>
+    <ApplicationDisplayVersion>1.21.5</ApplicationDisplayVersion>
+    <Version>1.21.5</Version>
     <Product>Aerofly 转换器</Product>
     <AssemblyName>AeroflyConv.Public</AssemblyName>
     <RootNamespace>AeroflyConv.Android</RootNamespace>
@@ -27,12 +27,13 @@
 
   <ItemGroup>
     <Compile Include="..\AeroflyConv.Android\MainActivity.cs" Link="MainActivity.cs" />
-    <Compile Include="..\AeroflyConv.Android\AuroraView.cs" Link="AuroraView.cs" />
     <!-- Shared UI assets only: labels (values) and launcher bitmaps (mipmap-*) are per project. -->
     <AndroidResource Include="..\AeroflyConv.Android\Resources\drawable\*"
                      Link="Resources\drawable\%(Filename)%(Extension)" />
     <AndroidResource Include="..\AeroflyConv.Android\Resources\layout\*"
                      Link="Resources\layout\%(Filename)%(Extension)" />
+    <AndroidResource Include="..\AeroflyConv.Android\Resources\color\*"
+                     Link="Resources\color\%(Filename)%(Extension)" />
     <AndroidResource Include="..\AeroflyConv.Android\Resources\values\ic_launcher_background.xml"
                      Link="Resources\values\ic_launcher_background.xml" />
   </ItemGroup>

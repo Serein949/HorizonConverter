@@ -28,19 +28,22 @@ public class MainActivity : Activity
     public const string AppLabel = "Aerofly 转换器";
 
     private const bool IsPublicBuild = true;
-    private const string ProductLabel = "Aerofly 转换器 v1.0";
+
 #else
     public const string AppLabel = "Aerofly 转换器 Alpha";
 
     private const bool IsPublicBuild = false;
-    private const string ProductLabel = "Aerofly 转换器 Alpha v1.2.0";
+
 #endif
+
+    /// <summary>Window title / log prefix, always in sync with <see cref="ProductInfo.Version"/>.</summary>
+    private static readonly string ProductLabel = (IsPublicBuild ? ProductInfo.Name : ProductInfo.FullName) + " v" + ProductInfo.Version;
 
     private const int RequestPickFolder = 1002;
     private const int RequestPickOutput = 1003;
     private const string Prefs = "aeroflyconv";
 
-    private static readonly Color Bg = Color.ParseColor("#05070C");
+    private static readonly Color Bg = Color.ParseColor("#0B0E14");
     private static readonly Color Fg = Color.ParseColor("#F8FAFD");
     private static readonly Color Muted = Color.ParseColor("#7C8797");
     private static readonly Color Soft = Color.ParseColor("#C6CEDA");
@@ -110,7 +113,6 @@ public class MainActivity : Activity
     private Switch _swTtcMips = null!;
     private Button _btnConvert = null!;
     private ScrollView _scrollLog = null!;
-    private AuroraView _aurora = null!;
 
     private PillGroup _modes = null!;
     private PillGroup _formats = null!;
@@ -173,7 +175,7 @@ public class MainActivity : Activity
         Title = ProductLabel;
         // let the wallpaper gradient run under the status bar; the insets listener pads the content
         Window?.AddFlags(WindowManagerFlags.DrawsSystemBarBackgrounds);
-        Window?.SetStatusBarColor(Color.Transparent);
+        Window?.SetStatusBarColor(Bg);
         Window?.SetNavigationBarColor(Bg);
 
         SetContentView(Resource.Layout.activity_main);
@@ -231,36 +233,10 @@ public class MainActivity : Activity
         AcceptIncoming(intent);
     }
 
-    protected override void OnResume()
-    {
-        base.OnResume();
-        _aurora?.Resume();
-    }
-
-    protected override void OnPause()
-    {
-        // stop the 60 fps background while the app is not on screen (battery, no wake locks)
-        _aurora?.Pause();
-        base.OnPause();
-    }
-
     // ------------------------------------------------------------------ views
 
     private void BindViews()
     {
-        // custom views cannot be named in XML (LayoutInflater only knows Java classes), so the
-        // aurora layer is created here and dropped into its placeholder host
-        try
-        {
-            var auroraHost = FindViewById<FrameLayout>(Resource.Id.auroraHost)!;
-            _aurora = new AuroraView(this);
-            auroraHost.AddView(_aurora, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
-        }
-        catch (Exception ex)
-        {
-            Log("背景动效不可用，已使用纯色背景：" + ex.Message);
-        }
         _llModes = FindViewById<LinearLayout>(Resource.Id.llModes)!;
         _llFormat = FindViewById<LinearLayout>(Resource.Id.llFormat)!;
         _llSize = FindViewById<LinearLayout>(Resource.Id.llSize)!;
@@ -1353,7 +1329,7 @@ public class MainActivity : Activity
             {
                 bool on = i == index;
                 _pills[i].SetBackgroundResource(on ? Resource.Drawable.bg_pill_on : Resource.Drawable.bg_pill_off);
-                _pills[i].SetTextColor(on ? Color.ParseColor("#8FE4FF") : Color.ParseColor("#C3CEDA"));
+                _pills[i].SetTextColor(on ? Color.ParseColor("#00B8FF") : Color.ParseColor("#9AA4B2"));
             }
             ScrollToSelected();
         }
@@ -1375,9 +1351,23 @@ public class MainActivity : Activity
             pill.Post(() =>
             {
                 int margin = Dp(_activity, 12);
-                int target = Math.Max(0, pill.Left - margin);
-                int max = Math.Max(0, _host.Width - scroller.Width);
-                scroller.SmoothScrollTo(Math.Min(target, max + margin), 0);
+                int left = pill.Left - margin;
+                int right = pill.Right + margin;
+                int viewport = scroller.Width;
+                int current = scroller.ScrollX;
+
+                // scroll only as far as needed: keep the pill fully visible, never jump to the end
+                int target = current;
+                if (left < current)
+                {
+                    target = left;
+                }
+                else if (right > current + viewport)
+                {
+                    target = right - viewport;
+                }
+
+                scroller.SmoothScrollTo(Math.Max(0, target), 0);
             });
         }
 
