@@ -1,27 +1,33 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace AeroflyConv.Core.Codecs;
 
 /// <summary>
-/// Minimal, fully managed ASTC LDR encoder.
+/// Small, fully managed ASTC LDR encoder that emits blocks conforming to the
+/// Khronos ASTC specification (the same layout astcenc writes and hardware
+/// decodes):
 ///
-/// The encoder deliberately emits a narrow but completely legal subset of the
-/// ASTC block format so that <see cref="AstcCodec"/> (and any conforming ASTC
-/// decoder) can decode the result:
+///  * exactly constant blocks use the void-extent form.
+///  * everything else is a single-partition, single-plane block.  The 11-bit
+///    block mode (bits 0..10) is taken from the normative block-mode encoding
+///    (astcenc <c>decode_block_mode_2d</c>), partition count - 1 = 0 lives in
+///    bits 11..12, the colour endpoint mode in bits 13..16, the endpoint
+///    integers are written with encode_ise (LSB first, pure-bit levels only)
+///    at bit 17, and the weight integers occupy the top of the block, each one
+///    bit-reversed in its field (ised stream stored back to front).
+///  * only CEM 8 (RGB) and CEM 12 (RGBA) are used, with power-of-two endpoint
+///    level counts (QUANT_8/16/32/64/128/256), which are stored as plain
+///    little-endian bit fields because their scramble maps are the identity.
+///  * weights use the power-of-two quant levels only (QUANT_2/4/8/16/32, i.e.
+///    pure bit sequences), whose scramble maps are also the identity.
 ///
-///  * one partition, dual-plane disabled;
-///  * void-extent blocks for exactly constant blocks;
-///  * otherwise CEM 8 (RGB, six 8-bit endpoints) or CEM 12 (RGBA, eight 8-bit
-///    endpoints), always with endpoint range 0 (no trits/quints) and a pure-bit
-///    weight sequence (2..5 bits per weight);
-///  * the weight grid is chosen from a small fixed candidate list and the best
-///    candidate for each block is selected by exact squared error.
-///
-/// The CEM 8/12 decoder in <see cref="AstcCodec"/> swaps endpoints when the
-/// first endpoint has a larger RGB sum ("blue-contour" packing). The encoder
-/// therefore keeps endpoint 0 at or below endpoint 1 in RGB sum, which avoids
-/// that lossy special case.
+/// The configuration space (weight grid x weight precision) is enumerated from
+/// the block-mode table at first use; for each block a cheap projection pass
+/// ranks the candidates and the most promising ones get the full endpoint /
+/// weight fit before the best one is emitted.
 /// </summary>
 public static class AstcEncoder
 {
@@ -30,19 +36,14 @@ public static class AstcEncoder
     private const int MaxConfigs = 16;
 
     // How many configurations survive the cheap pre-pass and get the full
-    // endpoint/weight optimization. Encoding every configuration fully costs
-    // several times more for a PSNR difference well below 0.1 dB.
+    // endpoint/weight optimization.
     private const int RefineConfigCount = 8;
 
     // Weight search window (in quantized level indices) around the projected
-    // optimum. Full enumeration over 32 levels costs ~6x more for ~0.05 dB.
+    // optimum.
     private const int DescentRadius = 2;
 
-    /// <summary>
-    /// Per-call search budget. <see cref="AstcQuality.Standard"/> uses the
-    /// tuned defaults above and produces byte-identical blocks to the previous
-    /// fixed-budget encoder.
-    /// </summary>
+    /// <summary>Per-call search budget.</summary>
     private readonly struct Settings
     {
         public readonly int RefineCount;
@@ -58,15 +59,15 @@ public static class AstcEncoder
 
         public static Settings For(AstcQuality quality) => quality switch
         {
-            // One refinement pass, three grids, +-1 level search.
             AstcQuality.Fast => new Settings(3, 1, 1),
-            // Every candidate grid, three passes, +-3 level search. The gain over
-            // Standard is small (~0.05 dB) but it is the best this design does.
             AstcQuality.High => new Settings(MaxConfigs, 2, 3),
             _ => new Settings(RefineConfigCount, 2, DescentRadius),
         };
     }
 
+    // Unquantised weight values for the pure-bit quant levels.  These are the
+    // values the bit patterns stand for after weight infill, exactly as the
+    // decoder derives them (and as astcenc's quant_and_xfer tables list them).
     private static readonly int[] Levels1 = { 0, 64 };
 
     private static readonly int[] Levels2 = { 0, 21, 43, 64 };
@@ -84,23 +85,66 @@ public static class AstcEncoder
         34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64,
     };
 
-    // (width, height) weight grids worth trying, best candidates first. A grid
-    // is only used when the bit budget allows it.
-    private static readonly (byte W, byte H)[] CandidateGrids =
+    private static readonly int[]?[] WeightLevels =
     {
-        (5, 5), (4, 4), (4, 3), (3, 4), (3, 3),
-        (6, 5), (5, 6), (5, 4), (4, 5),
-        (7, 4), (4, 7), (6, 4), (4, 6),
-        (9, 3), (3, 9), (10, 3), (3, 10),
-        (8, 5), (5, 8), (7, 5), (5, 7), (8, 4), (4, 8),
-        (2, 2), (2, 3), (3, 2), (2, 5), (5, 2), (2, 6), (6, 2),
+        null, Levels1, Levels2, Levels3, Levels4, Levels5,
     };
+
+    // Weight quantization method index (0..11 = QUANT_2..QUANT_32) to the
+    // number of bits per weight; -1 for the trit/quint methods.
+    private static readonly int[] QuantBits = { 1, -1, 2, -1, -1, 3, -1, -1, 4, -1, -1, 5 };
+
+    // Endpoint levels: EpUnquant[range * 256 + p] is the 8-bit endpoint value a
+    // stored integer p decodes to, EpQuant is its inverse (nearest value).
+    // Only the pure-bit ranges (AstcTables.CemA == 0, index <= 15) are filled.
+    private static readonly byte[] EpUnquant = new byte[19 * 256];
+    private static readonly byte[] EpQuant = new byte[19 * 256];
+
+    private static readonly ConcurrentDictionary<int, Config[]> ConfigCache = new();
 
     private struct Config
     {
-        public byte Gw;
-        public byte Gh;
-        public byte Bits;
+        public ushort Mode;     // 11-bit block mode
+        public byte Gw;         // weight grid width
+        public byte Gh;         // weight grid height
+        public byte WBits;      // bits per weight
+        public byte EpRange;    // endpoint level, index into AstcTables.CemA/B
+        public byte EpBits;     // bits per endpoint value
+        public byte EpCount;    // 6 (CEM 8) or 8 (CEM 12) endpoint values
+    }
+
+    static AstcEncoder()
+    {
+        for (int range = 0; range < 19; range++)
+        {
+            if (AstcTables.CemA[range] != 0)
+                continue;
+
+            int bits = AstcTables.CemB[range];
+            if (bits < 3 || bits > 8)
+                continue;
+
+            int levels = 1 << bits;
+            for (int p = 0; p < levels; p++)
+                EpUnquant[range * 256 + p] = (byte)Expand(p, bits);
+
+            for (int v = 0; v < 256; v++)
+            {
+                int best = 0;
+                int bestDelta = int.MaxValue;
+                for (int p = 0; p < levels; p++)
+                {
+                    int delta = Math.Abs(EpUnquant[range * 256 + p] - v);
+                    if (delta < bestDelta)
+                    {
+                        bestDelta = delta;
+                        best = p;
+                    }
+                }
+
+                EpQuant[range * 256 + v] = (byte)best;
+            }
+        }
     }
 
     /// <summary>True when <see cref="Encode"/> can handle the given block size.</summary>
@@ -159,13 +203,12 @@ public static class AstcEncoder
         }
 
         int channels = hasAlpha ? 4 : 3;
-        var configs = new Config[MaxConfigs];
-        int configCount = BuildConfigs(blockWidth, blockHeight, channels, configs);
+        Config[] configs = GetConfigs(blockWidth, blockHeight, channels);
         Settings settings = Settings.For(quality);
 
         // Blocks are independent, so large images are encoded one row of blocks
-        // at a time in parallel. The result is bit-identical to the serial path
-        // (no cross-block state); the fan-out only saves wall-clock time.
+        // at a time in parallel.  The result is bit-identical to the serial
+        // path (no cross-block state).
         if (blocksX * blocksY >= 64)
         {
             unsafe
@@ -184,7 +227,7 @@ public static class AstcEncoder
                         {
                             EncodeBlock(
                                 blockRows, width, height, blockWidth, blockHeight, channels,
-                                configs, configCount, settings, bx, by,
+                                configs, settings, bx, by,
                                 new Span<byte>(dst + (by * blocksX + bx) * 16, 16),
                                 pixels);
                         }
@@ -203,7 +246,7 @@ public static class AstcEncoder
                 {
                     EncodeBlock(
                         rgba, width, height, blockWidth, blockHeight, channels,
-                        configs, configCount, settings, bx, by,
+                        configs, settings, bx, by,
                         output.Slice((by * blocksX + bx) * 16, 16),
                         pixels);
                 }
@@ -219,7 +262,6 @@ public static class AstcEncoder
         int blockHeight,
         int channels,
         Config[] configs,
-        int configCount,
         in Settings settings,
         int bx,
         int by,
@@ -274,6 +316,7 @@ public static class AstcEncoder
             // Two-phase search: score every configuration with a cheap
             // projection pass, then run the expensive endpoint/weight
             // optimization only on the most promising ones.
+            int configCount = configs.Length;
             Span<long> scores = stackalloc long[MaxConfigs];
             for (int c = 0; c < configCount; c++)
                 scores[c] = EvaluateConfig(pixels, blockWidth, blockHeight, channels, configs[c]);
@@ -313,8 +356,8 @@ public static class AstcEncoder
 
             if (bestError == long.MaxValue)
             {
-                // Cannot happen (a 2x2/5-bit configuration always fits),
-                // but never emit something invalid.
+                // Cannot happen (every supported block size has at least one
+                // configuration), but never emit something invalid.
                 EmitVoidExtent(block, firstR, firstG, firstB, firstA);
             }
             else
@@ -326,62 +369,251 @@ public static class AstcEncoder
         block.CopyTo(destination);
     }
 
-    private static int BuildConfigs(int blockWidth, int blockHeight, int channels, Span<Config> destination)
+    // ------------------------------------------------------- configuration set
+
+    private static Config[] GetConfigs(int blockWidth, int blockHeight, int channels)
     {
-        int endpointBits = channels == 4 ? 64 : 48;
-        int count = 0;
+        int key = (blockWidth << 16) | (blockHeight << 8) | channels;
+        if (ConfigCache.TryGetValue(key, out Config[]? cached))
+            return cached;
 
-        foreach ((byte gw0, byte gh0) in CandidateGrids)
+        Config[] built = BuildConfigs(blockWidth, blockHeight, channels);
+        return ConfigCache.GetOrAdd(key, built);
+    }
+
+    /// <summary>
+    /// Enumerates the legal single-partition, single-plane block modes from the
+    /// normative block-mode encoding and keeps those whose weight grid and
+    /// endpoint precision fit the 128-bit block.
+    /// </summary>
+    private static Config[] BuildConfigs(int blockWidth, int blockHeight, int channels)
+    {
+        int epCount = channels == 4 ? 8 : 6;
+        var list = new List<Config>(64);
+        var seen = new HashSet<long>();
+        int minArea = Math.Max(4, blockWidth * blockHeight / 6);
+
+        for (int mode = 0; mode < 2048; mode++)
         {
-            if (count >= MaxConfigs)
-                break;
-
-            int gw = gw0;
-            int gh = gh0;
-
-            // Very large grids on small blocks are allowed by ASTC but waste
-            // weight bits; keep them one step away from the block at most.
-            if (gw > blockWidth + 1 || gh > blockHeight + 1)
+            if (!DecodeBlockMode(mode, out int gw, out int gh, out bool dualPlane, out int quant))
+                continue;
+            if (dualPlane)
+                continue;
+            if (gw > blockWidth || gh > blockHeight)
                 continue;
 
-            for (int bits = 5; bits >= 1; bits--)
-            {
-                int weightBits = gw * gh * bits;
-                if (17 + weightBits + endpointBits > 128)
-                    continue;
-                if (!TryGrid(gw, gh, RangeForBits(bits), out _, out _))
-                    continue;
+            int area = gw * gh;
+            if (area < minArea)
+                continue;
 
-                destination[count++] = new Config
-                {
-                    Gw = (byte)gw,
-                    Gh = (byte)gh,
-                    Bits = (byte)bits,
-                };
-                break;
+            // Several block modes decode to the same grid/quantisation (bit 8
+            // is free except in one grid form); keep the first, smallest one.
+            long key = ((long)gw << 24) | ((long)gh << 16) | ((long)quant << 8);
+            if (!seen.Add(key))
+                continue;
+
+            int wb = area * QuantBits[quant];
+            int colorBits = 111 - wb;
+            if (colorBits < 16)
+                continue;
+
+            if (!TryEndpointLevel(epCount, colorBits, out int range, out int epBits))
+                continue;
+
+            list.Add(new Config
+            {
+                Mode = (ushort)mode,
+                Gw = (byte)gw,
+                Gh = (byte)gh,
+                WBits = (byte)QuantBits[quant],
+                EpRange = (byte)range,
+                EpBits = (byte)epBits,
+                EpCount = (byte)epCount,
+            });
+        }
+
+        // Rank by a static quality proxy and keep a shortlist that mixes dense
+        // grids, high weight precision and high endpoint precision.
+        list.Sort((x, y) => Score(y, epCount).CompareTo(Score(x, epCount)));
+
+        int keep = Math.Min(list.Count, MaxConfigs);
+        var result = new Config[keep];
+        for (int i = 0; i < keep; i++)
+            result[i] = list[i];
+
+        return result;
+    }
+
+    private static int Score(in Config c, int epCount) =>
+        (3 * c.Gw * c.Gh) + (2 * c.WBits * c.Gw * c.Gh) + (c.EpBits * epCount / 2);
+
+    /// <summary>
+    /// Port of astcenc's <c>decode_block_mode_2d</c>: returns the weight grid,
+    /// the dual-plane flag and the weight quantization method for an 11-bit
+    /// block mode, and false when the mode is not a legal single-partition
+    /// (2D) mode with a supported weight bit count.
+    /// </summary>
+    private static bool DecodeBlockMode(
+        int mode, out int gw, out int gh, out bool dualPlane, out int quant)
+    {
+        gw = 0;
+        gh = 0;
+        dualPlane = false;
+        quant = -1;
+
+        int baseQuant = (mode >> 4) & 1;
+        int h = (mode >> 9) & 1;
+        int d = (mode >> 10) & 1;
+        int a = (mode >> 5) & 3;
+
+        if ((mode & 3) != 0)
+        {
+            baseQuant |= (mode & 3) << 1;
+            int b = (mode >> 7) & 3;
+            switch ((mode >> 2) & 3)
+            {
+                case 0:
+                    gw = b + 4;
+                    gh = a + 2;
+                    break;
+                case 1:
+                    gw = b + 8;
+                    gh = a + 2;
+                    break;
+                case 2:
+                    gw = a + 2;
+                    gh = b + 8;
+                    break;
+                default:
+                    b &= 1;
+                    if ((mode & 0x100) != 0)
+                    {
+                        gw = b + 2;
+                        gh = a + 2;
+                    }
+                    else
+                    {
+                        gw = a + 2;
+                        gh = b + 6;
+                    }
+
+                    break;
+            }
+        }
+        else
+        {
+            int form = (mode >> 2) & 3;
+            if (form == 0)
+                return false;
+
+            baseQuant |= form << 1;
+            int b = (mode >> 9) & 3;
+            switch ((mode >> 7) & 3)
+            {
+                case 0:
+                    gw = 12;
+                    gh = a + 2;
+                    break;
+                case 1:
+                    gw = a + 2;
+                    gh = 12;
+                    break;
+                case 2:
+                    gw = a + 6;
+                    gh = b + 6;
+                    d = 0;
+                    h = 0;
+                    break;
+                default:
+                    switch ((mode >> 5) & 3)
+                    {
+                        case 0:
+                            gw = 6;
+                            gh = 10;
+                            break;
+                        case 1:
+                            gw = 10;
+                            gh = 6;
+                            break;
+                        default:
+                            return false;
+                    }
+
+                    break;
             }
         }
 
-        return count;
+        int count = gw * gh * (d + 1);
+        quant = baseQuant - 2 + 6 * h;
+        dualPlane = d != 0;
+
+        if (quant is < 0 or > 11)
+            return false;
+
+        int bits = QuantBits[quant];
+        if (bits < 0)
+            return false;
+
+        int weightBits = count * bits;
+        return count <= 64 && weightBits >= 24 && weightBits <= 96;
     }
 
-    private static int RangeForBits(int bits) => bits switch
+    /// <summary>
+    /// Picks the endpoint quantization level the decoder will derive for
+    /// <paramref name="colorBits"/> available bits: the highest-precision level
+    /// whose ISE payload fits.  Returns false unless that level is a pure-bit
+    /// level at least as precise as QUANT_8.
+    /// </summary>
+    private static bool TryEndpointLevel(int epCount, int colorBits, out int range, out int bits)
     {
-        1 => 2,
-        2 => 4,
-        3 => 7,
-        4 => 12,
-        _ => 15,
+        // Windows of `color_bits` for which astcenc's normative
+        // `quant_mode_table[ep_count >> 1][color_bits]` selects a *pure bit*
+        // quantization level (CemA == 0) *and* the managed decoder's
+        // "highest precision that fits" scan picks the same level.  Both
+        // conditions are required: the table is what hardware uses, the scan is
+        // what AstcCodec uses, and they disagree on a few bit counts (e.g. 8
+        // integers at 61 bits: the table says QUANT_128, the scan says
+        // QUANT_192), so those counts must not be emitted.
+        ReadOnlySpan<byte> windows = epCount == 8 ? EndpointWindows8 : EndpointWindows6;
+        for (int i = 0; i < windows.Length; i += 3)
+        {
+            if (colorBits >= windows[i] && colorBits <= windows[i + 1])
+            {
+                range = windows[i + 2];
+                bits = (byte)AstcTables.CemB[range];
+                return true;
+            }
+        }
+
+        range = -1;
+        bits = 0;
+        return false;
+    }
+
+    // (min color_bits, max color_bits, CemA/CemB index) triples, ordered by
+    // descending endpoint precision.  Derived from quant_mode_table rows 3 and 4
+    // plus the CemA/CemB scan rule; levels below QUANT_8 are omitted.
+    private static readonly byte[] EndpointWindows6 =
+    {
+        48, 111, 0, // QUANT_256, 8 bits
+        42, 43, 3,  // QUANT_128, 7 bits
+        36, 37, 6,  // QUANT_64,  6 bits
+        30, 31, 9,  // QUANT_32,  5 bits
+        24, 25, 12, // QUANT_16,  4 bits
+        18, 19, 15, // QUANT_8,   3 bits
     };
 
-    private static ReadOnlySpan<int> LevelsForBits(int bits) => bits switch
+    private static readonly byte[] EndpointWindows8 =
     {
-        1 => Levels1,
-        2 => Levels2,
-        3 => Levels3,
-        4 => Levels4,
-        _ => Levels5,
+        64, 111, 0, // QUANT_256, 8 bits
+        56, 58, 3,  // QUANT_128, 7 bits
+        48, 50, 6,  // QUANT_64,  6 bits
+        40, 42, 9,  // QUANT_32,  5 bits
+        32, 34, 12, // QUANT_16,  4 bits
+        24, 26, 15, // QUANT_8,   3 bits
     };
+
+    // ------------------------------------------------------------ block fitting
 
     /// <summary>
     /// Encodes one block into <paramref name="outBlock"/> and returns the exact
@@ -399,14 +631,12 @@ public static class AstcEncoder
         int pixelCount = blockWidth * blockHeight;
         int gw = config.Gw;
         int gh = config.Gh;
-        int bits = config.Bits;
         int gridCount = gw * gh;
-        ReadOnlySpan<int> levels = LevelsForBits(bits);
+        ReadOnlySpan<int> levels = WeightLevels[config.WBits];
 
         int ds = (1024 + blockWidth / 2) / (blockWidth - 1);
         int dt = (1024 + blockHeight / 2) / (blockHeight - 1);
 
-        // Pixel -> weight-grid interpolation.
         Span<byte> idx0 = stackalloc byte[MaxPixels];
         Span<byte> idx1 = stackalloc byte[MaxPixels];
         Span<byte> idx2 = stackalloc byte[MaxPixels];
@@ -450,6 +680,8 @@ public static class AstcEncoder
         Span<int> weights = stackalloc int[MaxPixels];
         Span<int> e0 = stackalloc int[4];
         Span<int> e1 = stackalloc int[4];
+        Span<byte> q0 = stackalloc byte[4];
+        Span<byte> q1 = stackalloc byte[4];
 
         InitEndpoints(pixels, pixelCount, channels, e0, e1);
         ProjectGrid(
@@ -464,6 +696,7 @@ public static class AstcEncoder
         for (int iteration = 0; iteration < settings.Iterations; iteration++)
         {
             FitEndpoints(pixels, pixelCount, channels, weights, e0, e1);
+            QuantizeEndpoints(config.EpRange, channels, e0, e1, q0, q1);
             ProjectGrid(
                 pixels, pixelCount, channels, e0, e1, idx0, idx1, idx2, idx3,
                 coef0, coef1, coef2, coef3, levels, grid);
@@ -473,21 +706,20 @@ public static class AstcEncoder
                 affStart, affPixels, gridCount, passes: 2, radius: settings.Radius);
         }
 
-        // A final endpoint pass makes sure the emitted pair is the best one for
-        // the current weights and still respects the endpoint ordering rule.
-        bool endpointsChanged = FitEndpoints(pixels, pixelCount, channels, weights, e0, e1);
-        if (endpointsChanged)
-        {
-            ProjectGrid(
-                pixels, pixelCount, channels, e0, e1, idx0, idx1, idx2, idx3,
-                coef0, coef1, coef2, coef3, levels, grid);
-            OptimizeWeights(
-                pixels, pixelCount, channels, e0, e1, grid, weights, levels,
-                idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3,
-                affStart, affPixels, gridCount, passes: 2, radius: settings.Radius);
-        }
+        // Final pass: least-squares endpoints for the current weights, snap them
+        // to the endpoint level the block will carry, then refit the weights so
+        // the emitted values are the ones that were actually scored.
+        FitEndpoints(pixels, pixelCount, channels, weights, e0, e1);
+        QuantizeEndpoints(config.EpRange, channels, e0, e1, q0, q1);
+        ProjectGrid(
+            pixels, pixelCount, channels, e0, e1, idx0, idx1, idx2, idx3,
+            coef0, coef1, coef2, coef3, levels, grid);
+        OptimizeWeights(
+            pixels, pixelCount, channels, e0, e1, grid, weights, levels,
+            idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3,
+            affStart, affPixels, gridCount, passes: 2, radius: settings.Radius);
 
-        EmitBlock(outBlock, channels, config, grid, levels, e0, e1);
+        EmitBlock(outBlock, config, grid, q0, q1);
         return ComputeError(
             pixels, pixelCount, channels, e0, e1, grid, levels,
             idx0, idx1, idx2, idx3, coef0, coef1, coef2, coef3, weights);
@@ -526,7 +758,7 @@ public static class AstcEncoder
 
     /// <summary>
     /// Cheap score for a configuration: min/max endpoints, one projection of the
-    /// weight grid, no coordinate descent. Used to rank configurations before
+    /// weight grid, no coordinate descent.  Used to rank configurations before
     /// the full optimization pass.
     /// </summary>
     private static long EvaluateConfig(
@@ -535,7 +767,7 @@ public static class AstcEncoder
         int pixelCount = blockWidth * blockHeight;
         int gw = config.Gw;
         int gh = config.Gh;
-        ReadOnlySpan<int> levels = LevelsForBits(config.Bits);
+        ReadOnlySpan<int> levels = WeightLevels[config.WBits];
 
         int ds = (1024 + blockWidth / 2) / (blockWidth - 1);
         int dt = (1024 + blockHeight / 2) / (blockHeight - 1);
@@ -557,11 +789,14 @@ public static class AstcEncoder
         Span<int> weights = stackalloc int[MaxPixels];
         Span<int> e0 = stackalloc int[4];
         Span<int> e1 = stackalloc int[4];
+        Span<byte> q0 = stackalloc byte[4];
+        Span<byte> q1 = stackalloc byte[4];
 
         InitEndpoints(pixels, pixelCount, channels, e0, e1);
         ProjectGrid(
             pixels, pixelCount, channels, e0, e1, idx0, idx1, idx2, idx3,
             coef0, coef1, coef2, coef3, levels, grid);
+        QuantizeEndpoints(config.EpRange, channels, e0, e1, q0, q1);
 
         return ComputeError(
             pixels, pixelCount, channels, e0, e1, grid, levels,
@@ -645,9 +880,6 @@ public static class AstcEncoder
         ReadOnlySpan<byte> coef2, ReadOnlySpan<byte> coef3,
         ReadOnlySpan<int> levels, Span<int> grid)
     {
-        int gridCount = levels.Length == 0 ? 0 : 0;
-        _ = gridCount;
-
         int maxIndex = 0;
         for (int p = 0; p < pixelCount; p++)
         {
@@ -756,8 +988,8 @@ public static class AstcEncoder
 
                 // Only levels near the projected optimum are considered: the
                 // error curve for a single grid point is unimodal enough that
-                // a window of 2*radius+1 levels loses ~0.05 dB while
-                // cutting the search by up to 6x.
+                // a window of 2*radius+1 levels loses little while cutting
+                // the search by up to 6x.
                 int lo = Math.Max(0, original - radius);
                 int hi = Math.Min(levels.Length - 1, original + radius);
                 for (int level = lo; level <= hi; level++)
@@ -814,10 +1046,10 @@ public static class AstcEncoder
 
     /// <summary>
     /// Least-squares fit of the two endpoints for the current weights, followed
-    /// by a small integer refinement. Returns true when the endpoint order was
-    /// swapped (which invalidates the weight grid projection).
+    /// by a small integer refinement.  Keeps endpoint 0 at or below endpoint 1
+    /// in RGB sum (the "blue contour" packing is lossy).
     /// </summary>
-    private static bool FitEndpoints(
+    private static void FitEndpoints(
         ReadOnlySpan<byte> pixels, int pixelCount, int channels,
         ReadOnlySpan<int> weights, Span<int> e0, Span<int> e1)
     {
@@ -865,9 +1097,8 @@ public static class AstcEncoder
             int best0 = base0;
             int best1 = base1;
 
-            // Centre first so the neighbours can prune early: most refinements
-            // lose against the least-squares fit within a handful of pixels.
-            ReadOnlySpan<int> offsets = stackalloc int[] { 0, 1, -1 };
+            // Centre first so the neighbours can prune early.
+            ReadOnlySpan<int> offsets = [0, 1, -1];
             for (int i0 = 0; i0 < 3; i0++)
             {
                 int r0 = Clamp255(base0 + offsets[i0]);
@@ -907,16 +1138,41 @@ public static class AstcEncoder
             e1[3] = 255;
         }
 
-        // The decoder uses a lossy "blue contour" endpoint representation when
-        // the first endpoint has the larger RGB sum. Keep endpoint 0 darker.
         if (e0[0] + e0[1] + e0[2] > e1[0] + e1[1] + e1[2])
         {
             for (int ch = 0; ch < 4; ch++)
                 (e0[ch], e1[ch]) = (e1[ch], e0[ch]);
-            return true;
+        }
+    }
+
+    /// <summary>
+    /// Snaps the fitted endpoints to the stored integer range of the block's
+    /// endpoint level, and makes <paramref name="e0"/>/<paramref name="e1"/>
+    /// hold the values the decoder will reconstruct from them.
+    /// </summary>
+    private static void QuantizeEndpoints(
+        int epRange, int channels, Span<int> e0, Span<int> e1,
+        Span<byte> q0, Span<byte> q1)
+    {
+        int table = epRange * 256;
+        for (int ch = 0; ch < 4; ch++)
+        {
+            q0[ch] = EpQuant[table + e0[ch]];
+            q1[ch] = EpQuant[table + e1[ch]];
+            e0[ch] = EpUnquant[table + q0[ch]];
+            e1[ch] = EpUnquant[table + q1[ch]];
         }
 
-        return false;
+        if (e0[0] + e0[1] + e0[2] > e1[0] + e1[1] + e1[2])
+        {
+            for (int ch = 0; ch < 4; ch++)
+            {
+                (e0[ch], e1[ch]) = (e1[ch], e0[ch]);
+                (q0[ch], q1[ch]) = (q1[ch], q0[ch]);
+            }
+        }
+
+        _ = channels;
     }
 
     private static long ComputeError(
@@ -940,161 +1196,61 @@ public static class AstcEncoder
         return error;
     }
 
+    // -------------------------------------------------------------- bit writing
+
     private static void EmitBlock(
-        Span<byte> block, int channels, in Config config,
-        ReadOnlySpan<int> grid, ReadOnlySpan<int> levels,
-        ReadOnlySpan<int> e0, ReadOnlySpan<int> e1)
+        Span<byte> block, in Config config,
+        ReadOnlySpan<int> grid, ReadOnlySpan<byte> q0, ReadOnlySpan<byte> q1)
     {
         block.Clear();
 
-        int cem = channels == 4 ? 12 : 8;
-        int range = RangeForBits(config.Bits);
-        if (!TryGrid(config.Gw, config.Gh, range, out int b0, out int b1))
-            throw new InvalidOperationException("Internal ASTC configuration error.");
+        // Block mode (bits 0..10), partition count - 1 = 0 (bits 11..12) and
+        // the colour endpoint mode (bits 13..16).
+        int cem = config.EpCount == 8 ? 12 : 8;
+        SetBits(block, 0, config.Mode, 11);
+        SetBits(block, 13, cem, 4);
 
-        b1 |= (cem & 7) << 5;
-        int b2 = (cem >> 3) & 1;
-
-        SetBits(block, 0, b0, 8);
-        SetBits(block, 8, b1, 8);
-        SetBits(block, 16, b2, 1);
-
-        if (channels == 3)
+        // Endpoint integers, channel-interleaved: R0,R1,G0,G1,B0,B1[,A0,A1].
+        int epBits = config.EpBits;
+        int values = config.EpCount / 2;
+        for (int ch = 0; ch < values; ch++)
         {
-            SetBits(block, 17, e0[0], 8);
-            SetBits(block, 25, e1[0], 8);
-            SetBits(block, 33, e0[1], 8);
-            SetBits(block, 41, e1[1], 8);
-            SetBits(block, 49, e0[2], 8);
-            SetBits(block, 57, e1[2], 8);
-        }
-        else
-        {
-            // CEM 12 interleaves the two endpoints: R0,R1,G0,G1,B0,B1,A0,A1.
-            for (int ch = 0; ch < 4; ch++)
-            {
-                SetBits(block, 17 + (ch * 2) * 8, e0[ch], 8);
-                SetBits(block, 17 + (ch * 2 + 1) * 8, e1[ch], 8);
-            }
+            SetBits(block, 17 + (ch * 2) * epBits, q0[ch], epBits);
+            SetBits(block, 17 + (ch * 2 + 1) * epBits, q1[ch], epBits);
         }
 
-        int bits = config.Bits;
+        // Weight integers: written back to front into the top of the block,
+        // each value bit-reversed inside its field.
+        int bits = config.WBits;
         int count = config.Gw * config.Gh;
         for (int i = 0; i < count; i++)
         {
-            int index = grid[i];
-            int stored = ReverseBits(index, bits);
+            int stored = ReverseBits(grid[i], bits);
             SetBits(block, 128 - (i + 1) * bits, stored, bits);
         }
-
-        _ = levels;
-    }
-
-    private static void EmitVoidExtent(Span<byte> block, byte r, byte g, byte b, byte a)
-    {
-        block.Clear();
-        block[0] = 0xfc;
-        block[1] = 1;
-        block[9] = r;
-        block[11] = g;
-        block[13] = b;
-        block[15] = a;
     }
 
     /// <summary>
-    /// Builds block-mode / grid bits for a single-partition block using the
-    /// given grid and pure-bit weight range.
+    /// Writes a void-extent block holding one constant colour: the reserved
+    /// header bytes, then four little-endian UNORM16 values (which for 8-bit
+    /// source colours are just the byte twice).
     /// </summary>
-    private static bool TryGrid(int gw, int gh, int range, out int b0, out int b1)
+    private static void EmitVoidExtent(Span<byte> block, byte r, byte g, byte b, byte a)
     {
-        b0 = 0;
-        b1 = 0;
-        int mode = (range >> 1) & 3;
-        int rangeBit0 = range & 1;
-        int rangeBit3 = (range >> 3) & 1;
+        block.Clear();
+        block[0] = 0xFC;
+        block[1] = 0xFD;
+        for (int i = 2; i < 8; i++)
+            block[i] = 0xFF;
 
-        if (mode == 0)
-        {
-            // Block mode 0 (b0 & 3 == 0). In this mode the low weight-range
-            // bits come from b0 bits 2..3, and b1 bit 1 may be reused by the
-            // grid. Only weight range 4 (2-bit weights) can be expressed.
-            if (range != 4)
-                return false;
-
-            if (gw == 12 && gh is >= 2 and <= 5)
-            {
-                b0 = (gh - 2) << 5;             // b0 bit7 = 0, b1 bit0 = 0
-            }
-            else if (gh == 12 && gw is >= 2 and <= 5)
-            {
-                b0 = 0x80 | ((gw - 2) << 5);    // b0 bit7 = 1, b1 bit0 = 0
-            }
-            else if (gw is >= 6 and <= 9 && gh is >= 6 and <= 9)
-            {
-                // u16 & 0x180 == 0x100: b0 bit7 = 0, b1 bit0 = 1.
-                b0 = (gw - 6) << 5;
-                b1 = 1 | ((gh - 6) << 1);       // b1 bit0 = 1, b1 bits1..2 = H-6
-            }
-            else if (gw == 10 && gh == 6)
-            {
-                b0 = 0x80 | (1 << 5);           // W = 10, H = 6
-                b1 = 1;
-            }
-            else if (gw == 6 && gh == 10)
-            {
-                b0 = 0x80;                      // W = 6, H = 10
-                b1 = 1;
-            }
-            else
-            {
-                return false;
-            }
-
-            b0 |= (range & 6) << 1;             // range bits 1..2 -> b0 bits 2..3
-            b0 |= rangeBit0 << 4;
-            return true;
-        }
-
-        int caseBits;
-        if (gw is >= 4 and <= 7 && gh is >= 2 and <= 5)
-        {
-            caseBits = 0;
-            int w = gw - 4;
-            b0 = mode | caseBits | ((gh - 2) << 5) | ((w & 1) << 7) | (rangeBit0 << 4);
-            b1 = ((w >> 1) & 1) | (rangeBit3 << 1);
-        }
-        else if (gw is >= 8 and <= 11 && gh is >= 2 and <= 5)
-        {
-            caseBits = 4;
-            int w = gw - 8;
-            b0 = mode | caseBits | ((gh - 2) << 5) | ((w & 1) << 7) | (rangeBit0 << 4);
-            b1 = ((w >> 1) & 1) | (rangeBit3 << 1);
-        }
-        else if (gw is >= 2 and <= 5 && gh is >= 8 and <= 11)
-        {
-            caseBits = 8;
-            int h = gh - 8;
-            b0 = mode | caseBits | ((gw - 2) << 5) | ((h & 1) << 7) | (rangeBit0 << 4);
-            b1 = ((h >> 1) & 1) | (rangeBit3 << 1);
-        }
-        else if (gw is >= 2 and <= 3 && gh is >= 2 and <= 5)
-        {
-            caseBits = 12;
-            b0 = mode | caseBits | ((gh - 2) << 5) | ((gw - 2) << 7) | (rangeBit0 << 4);
-            b1 = 1 | (rangeBit3 << 1);
-        }
-        else if (gw is >= 2 and <= 5 && gh is >= 6 and <= 7)
-        {
-            caseBits = 12;
-            b0 = mode | caseBits | ((gw - 2) << 5) | ((gh - 6) << 7) | (rangeBit0 << 4);
-            b1 = rangeBit3 << 1;
-        }
-        else
-        {
-            return false;
-        }
-
-        return true;
+        block[8] = r;
+        block[9] = r;
+        block[10] = g;
+        block[11] = g;
+        block[12] = b;
+        block[13] = b;
+        block[14] = a;
+        block[15] = a;
     }
 
     private static void SetBits(Span<byte> destination, int bitPosition, int value, int count)
@@ -1121,6 +1277,22 @@ public static class AstcEncoder
 
         return result;
     }
+
+    /// <summary>
+    /// Expands a stored endpoint integer to the 8-bit value the decoder
+    /// reconstructs (bit replication for pure-bit levels).
+    /// </summary>
+    private static int Expand(int p, int bits) => bits switch
+    {
+        8 => p,
+        7 => (p << 1) | (p >> 6),
+        6 => (p << 2) | (p >> 4),
+        5 => (p << 3) | (p >> 2),
+        4 => (p << 4) | p,
+        3 => (p << 5) | (p << 2) | (p >> 1),
+        2 => (p << 6) | (p << 4) | (p << 2) | p,
+        _ => p * 255,
+    };
 
     private static int SelectColor(int v0, int v1, int weight) =>
         ((((((v0 << 8) | v0) * (64 - weight)) + (((v1 << 8) | v1) * weight) + 32) >> 6) * 255 + 32768) / 65536;

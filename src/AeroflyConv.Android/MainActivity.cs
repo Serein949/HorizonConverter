@@ -469,15 +469,18 @@ public class MainActivity : Activity
     {
         for (int i = 0; i < _formats.Count && i < enabled.Length; i++)
             _formats.SetEnabled(i, enabled[i]);
-        if (!enabled[_formats.SelectedIndex])
+
+        int selected = _formats.SelectedIndex;
+        bool selectedEnabled = selected < 0 || selected >= enabled.Length || enabled[selected];
+        if (selectedEnabled)
+            return;
+
+        for (int i = 0; i < enabled.Length; i++)
         {
-            for (int i = 0; i < enabled.Length; i++)
+            if (enabled[i])
             {
-                if (enabled[i])
-                {
-                    _formats.SetSelected(i);
-                    break;
-                }
+                _formats.SetSelected(i);
+                break;
             }
         }
     }

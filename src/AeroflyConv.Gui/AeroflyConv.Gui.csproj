@@ -11,9 +11,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <AssemblyName>AeroflyConv</AssemblyName>
-    <Version>1.21.5</Version>
-    <FileVersion>1.21.5.0</FileVersion>
-    <AssemblyVersion>1.21.5.0</AssemblyVersion>
+    <Version>1.21.6</Version>
+    <FileVersion>1.21.6.0</FileVersion>
+    <AssemblyVersion>1.21.6.0</AssemblyVersion>
     <Product>Aerofly 转换器</Product>
     <Company>AeroflyConv</Company>
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
