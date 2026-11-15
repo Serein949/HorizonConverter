@@ -6,7 +6,11 @@ namespace AeroflyConv.Core.Media;
 /// <summary>Image input (ImageSharp) and fast PNG output (<see cref="PngWriter"/>).</summary>
 public static class ImageIo
 {
-    public static readonly string[] SupportedExtensions = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tga", ".webp"];
+    public static readonly string[] SupportedExtensions =
+    [
+        ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tga", ".webp",
+        ".psd", ".tif", ".tiff", ".hdr", ".pbm", ".qoi",
+    ];
 
     /// <summary>Loads an image as tightly packed RGBA8 (top row first).</summary>
     public static (byte[] Rgba, int Width, int Height) LoadRgba(string path)

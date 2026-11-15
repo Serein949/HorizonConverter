@@ -338,18 +338,17 @@ Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
 ### 15.1 Android 应用
 
 `src/AeroflyConv.Android` 是一个 .NET for Android 原生应用（不是 MAUI，界面用 XML 布局），
-APK 在 `dist/v1.21.4/android/AeroflyConverter-Alpha-1.21.4.apk`（minSdk 24 / target 36）；
-精简版是 `AeroflyConverter-Public-1.21.4.apk`（只保留 PNG→TTX、WAV→TSB，可与 Alpha 共存）。
+APK 在 `dist/v1.22/android/AeroflyConverter-Alpha-1.22.apk`（minSdk 24 / target 36）；
+精简版是 `AeroflyConverter-Public-1.22.apk`（只保留 **图片 → TTX / 音频 → TSB / TTX → TTX**，可与 Alpha 共存）。
 
-安装：`adb install -r AeroflyConverter-Alpha-1.21.4.apk`，或拷到手机后用文件管理器点击安装。
+安装：`adb install -r AeroflyConverter-Alpha-1.22.apk`，或拷到手机后用文件管理器点击安装。
 
-**界面（1.21.3 起为 iOS"流体玻璃"风格，全中文）**：
+**界面（全中文，1.21.5 起回到深蓝 + 青色的扁平风格）**：
 
-* 动态极光背景（彩色光团流动 + 扫过的光束 + 漂移光点，色相 48 秒转一圈），内容放在 3 张半透明玻璃卡片里（**文件 / 选项 / 日志**）；
-* 顶部**模式**是无卡片的分段控件（玻璃胶囊里滑动选择），当前模式的说明文字直接跟在下面；
+* 顶部**模式**是横向滑动的药丸分段控件，当前模式的说明文字直接跟在下面；
 * **文件**卡片：`添加文件`（可多选）、`文件夹`（递归扫描）、`清空`，逐个文件可点 ✕ 移除，
   底部一行是**输出位置**（`Download/AeroflyConv` 或自选文件夹，点「更改」）；
-* **选项**卡片（按模式自动显示）：格式（自动 / DXT1 / DXT5 / ETC2 / R8 / ASTC 6x6 / ASTC 5x5）、
+* **选项**卡片（按模式自动显示）：格式（自动 / DXT1 / DXT5 / ETC2 / R8 / **RGBA 无损** / ASTC 6x6 / ASTC 5x5）、
   贴图尺寸（匹配原尺寸 / 4096 / 2048 / 1024 / 源尺寸）、编码质量（ASTC 专用）、垂直翻转、
   压缩 TTX（LZHAM）、TTC 多级贴图；
 * **日志**默认折叠，点标题栏展开（箭头会转），展开状态被记住；转换出现失败时自动展开；
@@ -370,6 +369,9 @@ APK 在 `dist/v1.21.4/android/AeroflyConverter-Alpha-1.21.4.apk`（minSdk 24 / t
 | TSB → WAV | 与桌面版**逐字节一致** |
 | PNG → TTX (DXT1, 256×128, 9 mips) | 与桌面版**逐字节一致** |
 | PNG → TTX (ETC2, 512² 与 2048²) | 正常编码，`type_rgb_etc2` |
+| 图片 → TTX（PNG / JPG / BMP，1024²） | 三个文件 4.7 s，输出 `type_rgba` mips=11 |
+| TTX → TTX（ASTC 6x6 2048² → DXT5） | **5 s**，404,000 B（LZHAM 13.8×） |
+| 音频 → TSB（WAV） | 回读采样与源 WAV 完全一致 |
 
 桌面版与手机版共用同一份 `AeroflyConv.Core`，所以行为完全一致（PNG 压缩字节可能因
 zlib 实现不同而略有差异，像素不变）。
@@ -428,9 +430,45 @@ AeroflyConv livery.png -f astc6x6 --astc-quality high      # 高质量
 小图差距更小（固定的解码/压缩开销占比大）：512² 快速约 0.6 s、标准 1.0 s、高质量 1.5 s。
 手机端默认「标准」，选项会被记住。
 
+### 15.4 更多输入格式、音频打包、TTX 转码（1.22 新增）
+
+**图片输入**（`PNG → TTX` 已更名「图片 → TTX」，`PNG → TTC` 更名「图片 → TTC」）：
+PNG、JPG/JPEG、BMP、GIF、TGA、WebP、**PSD**、TIFF、HDR、PBM、QOI 都能直接转，格式按文件内容识别。
+
+**音频输入**：`音频 → TSB` 支持 MP3 / FLAC / OGG / WAV，直接打包成 Aerofly 音效包；
+桌面端对应 `-m audio2tsb`。
+
+**TTX → TTX**：在手机上把一张 TTX 解码后再按新格式编码写回，格式、尺寸、mip 链、LZHAM 全部可控；
+桌面端对应 `-m ttx2ttx`。同名输入不会覆盖原文件（写成 `*.converted.ttx`）。
+
+**RGBA 无损**：格式药丸新增「RGBA 无损」，输出 `type_rgba`（32 位、不经过块压缩）：
+
+| 输入 | 输出 | 体积 | 耗时（桌面） |
+|---|---|---|---|
+| 2048² PNG → RGBA 无损 + LZHAM | `type_rgba` 12 mips | 934,616 B | 1.65 s |
+| 同上，容器不压缩 | 同上 | 22,369,992 B | 0.43 s |
+| 对照：2048² → DXT1 | `type_rgb_s3tc_dxt1` | 324,992 B | 1.34 s |
+
+回读与源图**逐像素一致**（关闭「垂直翻转」时；开启时整体上下翻转，像素本身无损）。
+
 ---
 
 ## 16. 版本记录
+
+### 1.22
+
+* **手机端输入格式放宽**：图片支持 JPG / BMP / GIF / TGA / WebP / **PSD** / TIFF / HDR / PBM / QOI；
+  音频支持 MP3 / FLAC / OGG / WAV。选择器不再按 MIME 过滤，任何文件都能选进来。
+* **新增「音频 → TSB」**：MP3 / FLAC / OGG / WAV 直接打包成 Aerofly 音效包（`AudioDecoder` → WAV → `TsbFile`）。
+* **新增「TTX → TTX」**：手机端解码后按新格式重编码，支持 DXT1/DXT5/ETC2/R8/RGBA 无损/ASTC，
+  可改尺寸并保留 mip 链与 LZHAM 压缩；实测 2048² ASTC 6x6 → DXT5 只花 **5 s**。
+* **新增「RGBA 无损」输出**：`type_rgba`（32 位、无块压缩），2048² + LZHAM 为 1.65 s / 934 KB，
+  回读与源 PNG 逐像素一致。
+* **模式栏去重**：`PNG → TTX` 并入「图片 → TTX」，`WAV → TSB` 并入「音频 → TSB」；
+  Public 版只保留 **图片 → TTX / 音频 → TSB / TTX → TTX** 三个模式。
+* 与当前模式不匹配的文件不再报错中断，日志显示「跳过 …」。
+* 桌面 CLI 同步新增 `-m audio2tsb`、`-m ttx2ttx`，并支持新的图片格式。
+* 版本号统一到 **1.22**（Alpha `versionCode 12`、Public `versionCode 9`、桌面 1.22，桌面命名不区分 Alpha/Public）。
 
 ### 1.21.6
 

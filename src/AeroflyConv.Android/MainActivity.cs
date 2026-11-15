@@ -53,32 +53,34 @@ public class MainActivity : Activity
     [
         "自动识别",
         "TTX \u2192 PNG",
-        "PNG \u2192 TTX",
+        "图片 \u2192 TTX",
         "TSB \u2192 WAV",
-        "WAV \u2192 TSB",
+        "音频 \u2192 TSB",
         "TM \u2192 TXT",
         "TTC \u2192 PNG",
-        "PNG \u2192 TTC",
+        "图片 \u2192 TTC",
+        "TTX \u2192 TTX",
     ];
 
     private static readonly string[] ModeHints =
     [
         "根据文件扩展名自动判断转换方向。",
         "还原 DXT1/3/5、BC5、ETC1/2、ASTC（手机端）以及 RGBA/R8 为 PNG。",
-        "把 PNG 重新编码成 TTX 贴图（DXT1 / DXT5 / ETC2 / R8 或自动）。",
+        "把 PNG / JPG / BMP / PSD 等图片重新编码成 TTX 贴图（DXT1 / DXT5 / ETC2 / R8 / RGBA 或自动）。",
         "把 Aerofly 音效包解包成 WAV 文件。",
-        "把 WAV 打包成 Aerofly TSB 音效包。",
+        "把 MP3 / FLAC / OGG / WAV 直接打包成 Aerofly TSB 音效包。",
         "把 TOC/TSC/WAD/TMB/TSL 容器导出为可读文本。",
         "把地景贴图容器（.ttc）的第 0 级贴图转成 PNG。",
-        "把 PNG 编码成 .ttc 地景贴图。",
+        "把图片编码成 .ttc 地景贴图。",
+        "在手机上解码 TTX 再重新编码成另一种格式的 TTX。",
     ];
 
     /// <summary>Indexes into <see cref="ModeLabels"/> that this build offers.</summary>
     private static readonly int[] VisibleModeIndexes =
 #if PUBLIC_BUILD
-        [2, 4];
+        [2, 4, 8];
 #else
-        [0, 1, 2, 3, 4, 5, 6, 7];
+        [0, 1, 2, 3, 4, 5, 6, 7, 8];
 #endif
 
     /// <summary>Mode list entry for the current pill selection.</summary>
@@ -119,9 +121,9 @@ public class MainActivity : Activity
     private PillGroup _sizes = null!;
     private PillGroup _qualities = null!;
 
-    private static readonly string[] FormatLabels = ["自动", "DXT1", "DXT5", "ETC2", "R8", "ASTC 6x6", "ASTC 5x5"];
-    private static readonly string[] TTXFormats = ["dxt_auto", "dxt1", "dxt5", "etc2", "r8", "astc6x6", "astc5x5"];
-    private static readonly string[] TtcFormats = ["dxt1", "dxt1", "dxt5", "etc2", "r8", "dxt1", "dxt1"];
+    private static readonly string[] FormatLabels = ["自动", "DXT1", "DXT5", "ETC2", "R8", "RGBA 无损", "ASTC 6x6", "ASTC 5x5"];
+    private static readonly string[] TTXFormats = ["dxt_auto", "dxt1", "dxt5", "etc2", "r8", "type_rgba", "astc6x6", "astc5x5"];
+    private static readonly string[] TtcFormats = ["dxt1", "dxt1", "dxt5", "etc2", "r8", "dxt1", "dxt1", "dxt1"];
     private static readonly string[] SizeLabels = ["匹配原尺寸", "4096", "2048", "1024", "源尺寸"];
     private static readonly int?[] SizeValues = [null, 4096, 2048, 1024, null];
     private static readonly string[] QualityLabels = ["快速", "标准", "高质量"];
@@ -201,8 +203,11 @@ public class MainActivity : Activity
         {
             if (Intent.GetStringExtra("mode") is { } m)
             {
-                int index = ModeFromName(m);
-                _modes.SetSelected(index);
+                // ModeFromName returns an index into ModeLabels, while the pills are positions in
+                // VisibleModeIndexes - map one to the other so hidden modes cannot shift the list.
+                int labelIndex = ModeFromName(m);
+                int pillIndex = Array.IndexOf(VisibleModeIndexes, labelIndex);
+                _modes.SetSelected(Math.Max(0, pillIndex));
                 SaveState();
             }
             if (Intent.GetStringExtra("format") is { } f)
@@ -214,6 +219,10 @@ public class MainActivity : Activity
                 AstcQualityNames.TryParse(q, out AstcQuality parsedQuality))
             {
                 _qualities.SetSelected((int)parsedQuality);
+            }
+            if (Intent.HasExtra("flip"))
+            {
+                _swFlip.Checked = Intent.GetBooleanExtra("flip", true);
             }
             if (Intent.GetBooleanExtra("nocompress", false))
             {
@@ -276,8 +285,8 @@ public class MainActivity : Activity
 
         if (IsPublicBuild)
         {
-            // This build only ships PNG -> TTX and WAV -> TSB, so keep the empty state honest.
-            _tvEmpty.Text = "还没有文件\n添加 .png / .wav";
+            // This build only ships the image / audio entry points, so keep the empty state honest.
+            _tvEmpty.Text = "还没有文件\n添加 .png / .jpg / .bmp / .psd / .mp3 / .flac / .ttx";
         }
 
         // mode hint line under the pills
@@ -389,10 +398,11 @@ public class MainActivity : Activity
         1 => ConversionMode.TtxToPng,
         2 => ConversionMode.PngToTtx,
         3 => ConversionMode.TsbToWav,
-        4 => ConversionMode.WavToTsb,
+        4 => ConversionMode.AudioToTsb,
         5 => ConversionMode.TmToTxt,
         6 => ConversionMode.TtcToPng,
         7 => ConversionMode.PngToTtc,
+        8 => ConversionMode.TtxToTtx,
         _ => ConversionMode.Auto,
     };
 
@@ -401,24 +411,25 @@ public class MainActivity : Activity
         "ttx2png" => 1,
         "png2ttx" => 2,
         "tsb2wav" => 3,
-        "wav2tsb" => 4,
+        "wav2tsb" or "audio2tsb" => 4,
         "tm2txt" => 5,
         "ttc2png" => 6,
         "png2ttc" => 7,
+        "ttx2ttx" => 8,
         _ => 0,
     };
 
-    private bool IsTextureMode(int index) => index is 1 or 2 or 6 or 7;
+    private bool IsTextureMode(int index) => index is 1 or 2 or 6 or 7 or 8;
 
     private void UpdateModeUi()
     {
         int mode = RealMode;
         _tvModeHint.Text = ModeHints[mode];
 
-        _rowFormat.Visibility = mode is 2 or 7 ? ViewStates.Visible : ViewStates.Gone;
-        _rowSize.Visibility = mode is 2 or 7 ? ViewStates.Visible : ViewStates.Gone;
+        _rowFormat.Visibility = mode is 2 or 7 or 8 ? ViewStates.Visible : ViewStates.Gone;
+        _rowSize.Visibility = mode is 2 or 7 or 8 ? ViewStates.Visible : ViewStates.Gone;
         _rowFlip.Visibility = IsTextureMode(mode) ? ViewStates.Visible : ViewStates.Gone;
-        _rowCompress.Visibility = mode == 2 ? ViewStates.Visible : ViewStates.Gone;
+        _rowCompress.Visibility = mode is 2 or 8 ? ViewStates.Visible : ViewStates.Gone;
         _rowTtcMips.Visibility = mode == 7 ? ViewStates.Visible : ViewStates.Gone;
 
         bool anyOption = _rowFormat.Visibility == ViewStates.Visible
@@ -429,15 +440,15 @@ public class MainActivity : Activity
             || _rowQuality.Visibility == ViewStates.Visible;
         _cardOptions.Visibility = anyOption ? ViewStates.Visible : ViewStates.Gone;
 
-        if (mode == 2)
+        if (mode is 2 or 8)
         {
             _llFormat.Visibility = ViewStates.Visible;
-            SetFormatVisibility([true, true, true, true, true]);
+            SetFormatVisibility([true, true, true, true, true, true, true, true]);
         }
         else if (mode == 7)
         {
             _llFormat.Visibility = ViewStates.Visible;
-            SetFormatVisibility([false, true, true, true, true]);
+            SetFormatVisibility([false, true, true, true, true, false, false, false]);
         }
 
         _btnConvert.Text = "开始转换";
@@ -453,7 +464,10 @@ public class MainActivity : Activity
         if (_rowQuality is null || _formats is null || _cardOptions is null)
             return;
 
-        bool astc = RealMode == 2 && _formats.SelectedIndex >= 5;
+        bool astc = RealMode is 2 or 8
+            && _formats.SelectedIndex >= 0
+            && _formats.SelectedIndex < TTXFormats.Length
+            && TTXFormats[_formats.SelectedIndex].StartsWith("astc", StringComparison.Ordinal);
         _rowQuality.Visibility = astc ? ViewStates.Visible : ViewStates.Gone;
 
         bool anyOption = _rowFormat.Visibility == ViewStates.Visible
@@ -498,7 +512,7 @@ public class MainActivity : Activity
             Overwrite = true,
         };
 
-        if (mode == 2)
+        if (mode is 2 or 8)
         {
             options.TtxFormat = TTXFormats[_formats.SelectedIndex];
             options.AstcQuality = (AstcQuality)_qualities.SelectedIndex;
@@ -520,8 +534,11 @@ public class MainActivity : Activity
     {
         var intent = new Intent(Intent.ActionOpenDocument);
         intent.AddCategory(Intent.CategoryOpenable);
-        intent.SetType(IsPublicBuild ? "*/*" : "*/*");
-        if (IsPublicBuild) intent.PutExtra(Intent.ExtraMimeTypes, new[] { "image/png", "audio/x-wav", "audio/wav" });
+        intent.SetType("*/*");
+        intent.PutExtra(Intent.ExtraMimeTypes, new[]
+        {
+            "image/*", "audio/*", "application/octet-stream", "*/*",
+        });
         intent.PutExtra(Intent.ExtraAllowMultiple, true);
         StartActivityForResult(intent, RequestPickFiles);
     }
@@ -657,7 +674,9 @@ public class MainActivity : Activity
     private static bool IsSupported(string name) => Path.GetExtension(name).ToLowerInvariant() switch
     {
         ".ttx" or ".tsb" or ".ttc" or ".tmc" or ".tsc" or ".wad" or ".tmb" or ".tsl"
-            or ".png" or ".wav" or ".jpg" or ".jpeg" or ".mp3" or ".ogg" or ".flac" or ".tme" or ".zip" => true,
+            or ".png" or ".wav" or ".jpg" or ".jpeg" or ".mp3" or ".ogg" or ".flac" or ".tme" or ".zip"
+            or ".bmp" or ".gif" or ".tga" or ".webp" or ".psd" or ".tif" or ".tiff" or ".hdr"
+            or ".m4a" or ".aac" or ".pbm" or ".qoi" => true,
         _ => false,
     };
 
@@ -835,11 +854,19 @@ public class MainActivity : Activity
                 RunOnUiThread(() => _progress.Progress = progressValue);
                 SetStatus($"正在转换 {done}/{files.Count}");
 
-                if (!outcome.Ok || outcome.Output is null)
+                if (!outcome.Ok || string.IsNullOrEmpty(outcome.Output))
                 {
                     failed++;
                     MarkRow(file, "\u2715", "#FF7A7A");
                     Log($"失败 {file.DisplayName}：{outcome.Error}");
+                    continue;
+                }
+
+                // A file that the current mode cannot read comes back as "skipped" with no output.
+                if (outcome.Summary.StartsWith("skipped", StringComparison.OrdinalIgnoreCase))
+                {
+                    MarkRow(file, "\u2013", "#8A96A8");
+                    Log($"跳过 {file.DisplayName}：{outcome.Summary}");
                     continue;
                 }
 
@@ -1249,7 +1276,12 @@ public class MainActivity : Activity
             foreach (string file in files)
             {
                 ConversionOutcome outcome = Converter.ConvertFile(file, null, mode, options);
-                if (outcome.Ok && outcome.Output is not null)
+                if (outcome.Ok && outcome.Summary.StartsWith("skipped", StringComparison.OrdinalIgnoreCase))
+                {
+                    lines.Add($"SKIP {Path.GetFileName(file)}: {outcome.Summary}");
+                    Log($"跳过 {Path.GetFileName(file)}");
+                }
+                else if (outcome.Ok && !string.IsNullOrEmpty(outcome.Output))
                 {
                     string dest = Path.Combine(outDir, Path.GetFileName(outcome.Output));
                     File.Copy(outcome.Output, dest, overwrite: true);

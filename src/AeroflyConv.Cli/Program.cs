@@ -243,6 +243,8 @@ internal static class Program
         "png2ttc" or "ttcencode" => ConversionMode.PngToTtc,
         "zip2tme" => ConversionMode.ZipToTme,
         "tme2zip" => ConversionMode.TmeToZip,
+        "audio2tsb" or "tsbencode" => ConversionMode.AudioToTsb,
+        "ttx2ttx" or "recode" or "retranscode" => ConversionMode.TtxToTtx,
         _ => throw new ArgumentException($"unknown mode: {value}"),
     };
 
@@ -256,8 +258,7 @@ internal static class Program
 
             The mode is detected from the file extension unless -m is given:
               .ttx                      -> PNG
-              .png .jpg .bmp            -> TTX (texture)
-              .ttc                      -> PNG (scenery tile)
+              .png .jpg .bmp            -> TTX (texture)              .ttc                      -> PNG (scenery tile)
               .tsb                      -> WAV
               .wav                      -> TSB
               .mp3 .flac .ogg           -> WAV
@@ -267,7 +268,8 @@ internal static class Program
 
             Options:
               -m, --mode <name>       auto|ttx2png|png2ttx|tsb2wav|wav2tsb|audio2wav|
-                                      tm2txt|ttc2png|png2ttc|zip2tme|tme2zip
+                                      tm2txt|ttc2png|png2ttc|zip2tme|tme2zip|
+                                      audio2tsb|ttx2ttx
               -o, --output <path>     output path (single input only)
               -d, --outdir <dir>      write outputs below this folder (mirrors input folders).
                                       Needed when the source folder is read-only, e.g. inside the

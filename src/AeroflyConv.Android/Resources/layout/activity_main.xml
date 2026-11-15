@@ -131,7 +131,7 @@
                 android:layout_marginBottom="8dp"
                 android:gravity="center"
                 android:lineSpacingExtra="3dp"
-                android:text="还没有文件\n添加 .ttx / .tsb / .ttc / .tm / .png / .wav"
+                android:text="还没有文件\n添加 .ttx / .png / .jpg / .psd / .mp3 / .flac"
                 android:textColor="#6B7788"
                 android:textSize="12sp" />
 

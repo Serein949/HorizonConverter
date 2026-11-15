@@ -5,6 +5,35 @@
 
 ---
 
+## [1.21.6] - 2026-11-14
+
+### 修复
+
+- **ASTC 贴图在游戏里出现黑块 / 棋盘噪声**（机库里模型整体发黑）。
+  原因：ASTC 的 16 字节块头有严格位布局（11 位 `block_mode`、分区数、4 位 CEM、从第 17 位开始的 ISE 端点、
+  写在块尾的权重），旧编码器用的是自家简化布局，自研解码器用同一套布局去解，所以「回转 PSNR 42 dB、
+  看着完全正常」，交给 GPU 就全乱——软件解码器宽容，硬件不宽容。
+  已按 ARM 官方 astcenc 的 `symbolic_to_physical` / `decode_block_mode_2d` 重写
+  `src/AeroflyConv.Core/Codecs/AstcEncoder.cs`（公开 API 不变）：枚举全部 2048 个 block mode 选最优、
+  端点用 `encode_ise` 纯比特编码、权重按 astcenc 方式从块尾写入、常量块改用规范的 void-extent 形式。
+- **选 ASTC 格式时闪退**：`SetFormatVisibility` 用定长数组索引格式药丸，选中 ASTC（索引 5/6）越界抛
+  `IndexOutOfRangeException`；已改为越界即视为可用。
+
+### 验证
+
+- 真机 Adreno 740 用 `glCompressedTexImage2D` 上传、`glReadPixels` 取回，与软件解码逐像素比对：
+  4x4 67.44 dB、5x5 67.16 dB、6x6 68.56 dB、8x8 68.81 dB，最差差值 1，**坏块 0**。
+- 顺带修了验证工具两个漏洞：GPU 对照 Activity 之前把贴图拉伸铺满屏幕再读一个角落（读数本身就错），
+  改为 1:1 视口；`tools/AstcEncCheck` 在 Python 交叉校验不可用时不再打印「通过」。
+- 实测：手机端 512×512 ASTC 6x6 十级 mip → `type_rgb_astc_6x6` 62,392 B（LZHAM 158,808 → 62,392，2.5×）；
+  桌面 2048² ASTC 6x6 约 7.2 s / 41.99 dB，5x5 约 7.1 s / 47.21 dB。
+
+### 打包
+
+- 桌面 CLI/GUI 用带版本元数据的发布配置重新打包（`afc86a5`），桌面产品名去掉「Alpha」后缀。
+
+---
+
 ## [1.21.5] - 2026-11-08
 
 ### 变更

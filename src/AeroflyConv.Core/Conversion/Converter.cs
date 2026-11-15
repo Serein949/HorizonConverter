@@ -18,6 +18,8 @@ public enum ConversionMode
     PngToTtc,
     ZipToTme,
     TmeToZip,
+    AudioToTsb,
+    TtxToTtx,
     Auto,    XPlaneAircraft,
 }
 
@@ -109,6 +111,8 @@ public static class Converter
         ConversionMode.PngToTtc => ImageIo.SupportedExtensions,
         ConversionMode.ZipToTme => [".zip"],
         ConversionMode.TmeToZip => [".tme"],
+        ConversionMode.AudioToTsb => [".mp3", ".flac", ".ogg", ".wav"],
+        ConversionMode.TtxToTtx => [".ttx"],
         _ => [],
     };
 
@@ -151,6 +155,8 @@ public static class Converter
         ConversionMode.PngToTtc => ".ttc",
         ConversionMode.ZipToTme => ".tme",
         ConversionMode.TmeToZip => ".zip",
+        ConversionMode.AudioToTsb => ".tsb",
+        ConversionMode.TtxToTtx => ".ttx",
         _ => ".out",
     };
 
@@ -176,7 +182,16 @@ public static class Converter
             if (relative == "." || relative.StartsWith("..", StringComparison.Ordinal))
                 relative = "";
         }
-        return Path.Combine(outputRoot, relative, name);
+        string candidate = Path.Combine(outputRoot, relative, name);
+
+        // TTX -> TTX would otherwise overwrite its own input when writing next to the source.
+        if (mode == ConversionMode.TtxToTtx &&
+            string.Equals(Path.GetFullPath(candidate), Path.GetFullPath(input), StringComparison.OrdinalIgnoreCase))
+        {
+            candidate = Path.Combine(outputRoot, relative,
+                Path.GetFileNameWithoutExtension(input) + ".converted.ttx");
+        }
+        return candidate;
     }
 
     /// <summary>Creates the output directory and fails early with a clear message when it is read-only.</summary>
@@ -222,6 +237,23 @@ public static class Converter
     {
         var sw = Stopwatch.StartNew();
         if (mode == ConversionMode.Auto) mode = DetectMode(input);
+
+        // A hand-picked file list can contain anything, so a file that this mode cannot read is
+        // reported as an explicit skip instead of blowing up halfway through the batch.
+        string[] accepted = InputExtensions(mode);
+        if (accepted.Length > 0)
+        {
+            string ext = Path.GetExtension(input).ToLowerInvariant();
+            if (!accepted.Contains(ext))
+            {
+                return new ConversionOutcome
+                {
+                    Input = input, Output = "", Mode = mode, Ok = true,
+                    Summary = $"skipped: {mode} does not take {ext} (expected {string.Join(" ", accepted)})",
+                    Milliseconds = 0,
+                };
+            }
+        }
 
         bool explicitOutput = output is not null;
         output ??= ResolveOutputPath(input, mode, options);
@@ -292,6 +324,8 @@ public static class Converter
             ConversionMode.PngToTtc => PngToTtc(input, output, options, log),
             ConversionMode.ZipToTme => ZipToTme(input, output),
             ConversionMode.TmeToZip => TmeToZip(input, output),
+            ConversionMode.AudioToTsb => AudioToTsb(input, output, log),
+            ConversionMode.TtxToTtx => TtxToTtx(input, output, options, log),
             _ => throw new AeroflyFormatException($"cannot detect a conversion for {Path.GetFileName(input)}"),
         };
 
@@ -325,7 +359,8 @@ public static class Converter
 
     private static bool IsTextureMode(ConversionMode mode) =>
         mode is ConversionMode.TtxToPng or ConversionMode.PngToTtx
-            or ConversionMode.TtcToPng or ConversionMode.PngToTtc;
+            or ConversionMode.TtcToPng or ConversionMode.PngToTtc
+            or ConversionMode.TtxToTtx;
 
     private static bool IsPermissionProblem(Exception ex) =>
         ex is UnauthorizedAccessException ||
@@ -606,6 +641,69 @@ public static class Converter
     {
         ZipTme.TmeToZip(input, output);
         return "tme -> zip";
+    }
+
+    /// <summary>Any supported audio file straight into an Aerofly TSB sound pack.</summary>
+    private static string AudioToTsb(string input, string output, Action<string>? log)
+    {
+        DecodedAudio audio = AudioDecoder.Decode(input, log);
+        byte[] wav = AudioDecoder.ToWav(audio);
+        TsbSound sound = TsbFile.FromWav(wav);
+        byte[] data = TsbFile.Build(sound);
+        File.WriteAllBytes(output, data);
+        return $"{audio.Source} {sound.Format} {sound.SampleRate:0} Hz {sound.Channels}ch " +
+               $"{sound.Frames} frames, {data.Length:N0} bytes";
+    }
+
+    /// <summary>
+    /// Re-encodes a TTX into another TTX (decode + encode on the current machine, i.e. on the
+    /// phone when running in the Android app).
+    /// </summary>
+    private static string TtxToTtx(string input, string output, ConvertOptions options, Action<string>? log)
+    {
+        log?.Invoke($"Reading {Path.GetFileName(input)} ...");
+        DecodedTexture texture = TtxFile.Decode(File.ReadAllBytes(input), options.Flip);
+
+        int w = texture.Width, h = texture.Height;
+        byte[] rgba = texture.Rgba;
+
+        if (options.TargetTextureSize is int forced && forced >= 32)
+        {
+            (int tw, int th) = FitSize(w, h, forced);
+            if (tw != w || th != h)
+            {
+                log?.Invoke($"resizing {w}x{h} -> {tw}x{th}");
+                rgba = MipChain.Resample(rgba, w, h, tw, th);
+                w = tw;
+                h = th;
+            }
+        }
+        else if (!TmFormats.IsPowerOfTwo(w) || !TmFormats.IsPowerOfTwo(h))
+        {
+            int nw = MipChain.FloorPowerOfTwo(w);
+            int nh = MipChain.FloorPowerOfTwo(h);
+            log?.Invoke($"{TmFormats.PowerOfTwoWarning(w, h)} - resizing to {nw}x{nh}");
+            rgba = MipChain.Resample(rgba, w, h, nw, nh);
+            w = nw;
+            h = nh;
+        }
+
+        string format = TextureFormats.Canonical(options.TtxFormat);
+        if (format == TextureFormats.AutoDxt)
+            format = HasAlpha(rgba, w, h) ? "type_rgba_s3tc_dxt5" : "type_rgb_s3tc_dxt1";
+
+        log?.Invoke($"Encoding {format} ...");
+        TtxFile.EncodeResult result = TtxFile.Encode(rgba, w, h, format, options.Flip,
+            options.CompressTtx, log, options.AstcQuality);
+        File.WriteAllBytes(output, result.Data);
+        string summary = $"{texture.Format} -> {result.Format} {result.Width}x{result.Height} " +
+                         $"mips={result.Mips} {result.Data.Length:N0} bytes";
+        if (result.Compressed && result.PayloadBytes > 0)
+        {
+            double ratio = (double)result.PayloadBytes / Math.Max(1, result.Data.Length);
+            summary += $" (LZHAM {result.PayloadBytes:N0} -> {result.Data.Length:N0}, {ratio:0.0}x)";
+        }
+        return summary;
     }
 
     /// <summary>Metadata-only description of a file (used by --info).</summary>

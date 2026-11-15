@@ -1,4 +1,4 @@
-﻿using System.Collections.Frozen;
+using System.Collections.Frozen;
 
 namespace AeroflyConv.Core.Textures;
 
@@ -26,6 +26,9 @@ public static class TextureFormats
 
     private static readonly FrozenDictionary<string, string> Aliases = new Dictionary<string, string>
     {
+        ["rgba"] = "type_rgba",
+        ["r"] = "type_r",
+        ["r8"] = "type_r",
         ["astc"] = "type_rgb_astc_6x6",
         ["astc4x4"] = "type_rgb_astc_4x4",
         ["astc_4x4"] = "type_rgb_astc_4x4",
