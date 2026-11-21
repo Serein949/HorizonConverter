@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using AeroflyConv.Core;
 using AeroflyConv.Core.Conversion;
 using AeroflyConv.Core.Media;
+using AeroflyConv.Desktop;
 
 namespace AeroflyConv.Cli;
 
@@ -11,11 +12,12 @@ internal static class Program
     private static int Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+        DesktopImageDecoder.Install();
 
         if (args.Length > 0 && args[0] is "-v" or "--version" or "version")
         {
             Console.WriteLine($"{ProductInfo.Name} / {ProductInfo.Banner}");
-            Console.WriteLine("Aerofly FS TTX / TSB / TOC / TTC 转换器（纯 C# 实现）");
+            Console.WriteLine("Aerofly FS / scenery toolkit in pure C#: textures, sound, models");
             return 0;
         }
 
@@ -265,19 +267,19 @@ internal static class Program
     private static void PrintHelp()
     {
         Console.WriteLine("""
-            AeroflyConv - fast Aerofly FS TTX / TSB / TOC / TTC converter (C#)
+            Horizon Converter - textures, sound and 3D models for Aerofly FS (C#)
 
             Usage:
-              AeroflyConv <file-or-folder> [more paths...] [options]
+              HorizonConverter <file-or-folder> [more paths...] [options]
 
             The mode is detected from the file extension unless -m is given:
               .ttx                      -> PNG
-              .png .jpg .bmp .psd ...   -> TTX (texture)
+              .png .jpg .bmp .gif      -> TTX (texture)
               .ttc                      -> PNG (scenery tile)
               .tmb                      -> OBJ (3D model + MTL + textures)
               .tsb                      -> WAV
               .wav                      -> TSB
-              .mp3 .flac .ogg           -> WAV
+              .mp3 .ogg .wav            -> WAV
               .toc .tsc .wad .tsl       -> TXT (generic TM dump)
               .zip                      -> TME
               .tme                      -> ZIP
@@ -317,12 +319,12 @@ internal static class Program
               -h, --help              this help
 
             Examples:
-              AeroflyConv "C:\Aerofly FS 4\aircraft" -m ttx2png -j 8
-              AeroflyConv livery.png -m png2ttx -f dxt_auto --flip
-              AeroflyConv scenery.tmb -m tm2txt
-              AeroflyConv a350_1000.tmb -m tmb2obj
+              HorizonConverter "C:\Aerofly FS 4\aircraft" -m ttx2png -j 8
+              HorizonConverter livery.png -m png2ttx -f dxt_auto --flip
+              HorizonConverter scenery.tmb -m tm2txt
+              HorizonConverter a350_1000.tmb -m tmb2obj
               (tmb2obj extras: --y-up, --no-textures, --no-uv-flip, --livery, --sp)
-              AeroflyConv "E:\SteamLibrary\...\aircraft" -d D:\extracted -j 16
+              HorizonConverter "E:\SteamLibrary\...\aircraft" -d D:\extracted -j 16
             """);
     }
 }

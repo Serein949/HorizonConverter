@@ -1,11 +1,11 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Windows.Forms;
 
 namespace AeroflyConv.Gui.Ui;
 
-/// <summary>Sidebar brand header: "Aerofly" in white, " Converter" in the accent colour.</summary>
+/// <summary>Sidebar brand header: "Horizon" in white, " Converter" in the accent colour.</summary>
 internal sealed class BrandHeader : Control
 {
     public BrandHeader()
@@ -24,8 +24,8 @@ internal sealed class BrandHeader : Control
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
         float s = DeviceDpi / 96f;
 
-        using var font = new Font("Segoe UI Semibold", 17f);
-        const string first = "Aerofly";
+        using var font = new Font("Segoe UI Semibold", 15f);
+        const string first = "Horizon";
         const string second = "Converter";
         Size firstSize = TextRenderer.MeasureText(g, first, font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding);
         using var white = new SolidBrush(Theme.Text);
@@ -35,9 +35,6 @@ internal sealed class BrandHeader : Control
 
         using var tagFont = new Font("Segoe UI", 8.5f);
         using var dim = new SolidBrush(Theme.TextDim);
-        g.DrawString("TTX  \u00b7  TSB  \u00b7  TTC  \u00b7  TM", tagFont, dim, 24 * s, 52 * s);
+        g.DrawString("TTX  \u00b7  TSB  \u00b7  TTC  \u00b7  TM  \u00b7  3D", tagFont, dim, 24 * s, 52 * s);
     }
 }
-
-
-

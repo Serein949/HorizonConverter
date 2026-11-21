@@ -53,20 +53,20 @@ internal sealed class MainForm : Form
     [
         ("Textures", [
             new NavEntry { Text = "TTX \u2192 PNG", Mode = ConversionMode.TtxToPng },
-            new NavEntry { Text = "\u56fe\u7247 \u2192 TTX", Mode = ConversionMode.PngToTtx },
+            new NavEntry { Text = "Image \u2192 TTX", Mode = ConversionMode.PngToTtx },
             new NavEntry { Text = "TTX \u2192 TTX", Mode = ConversionMode.TtxToTtx },
         ]),
         ("3D", [
-            new NavEntry { Text = "TMB \u2192 \u6a21\u578b (OBJ)", Mode = ConversionMode.TmbToObj },
+            new NavEntry { Text = "TMB \u2192 OBJ", Mode = ConversionMode.TmbToObj },
         ]),
         ("Audio", [
             new NavEntry { Text = "TSB \u2192 WAV", Mode = ConversionMode.TsbToWav },
-            new NavEntry { Text = "\u97f3\u9891 \u2192 TSB", Mode = ConversionMode.AudioToTsb },
-            new NavEntry { Text = "MP3 / FLAC / OGG \u2192 WAV", Mode = ConversionMode.AudioToWav },
+            new NavEntry { Text = "Audio \u2192 TSB", Mode = ConversionMode.AudioToTsb },
+            new NavEntry { Text = "MP3 / OGG \u2192 WAV", Mode = ConversionMode.AudioToWav },
         ]),
         ("Scenery", [
             new NavEntry { Text = "TTC \u2192 PNG", Mode = ConversionMode.TtcToPng },
-            new NavEntry { Text = "\u56fe\u7247 \u2192 TTC", Mode = ConversionMode.PngToTtc },
+            new NavEntry { Text = "Image \u2192 TTC", Mode = ConversionMode.PngToTtc },
             new NavEntry { Text = "Compressed \u2192 TXT", Mode = ConversionMode.TmToTxt },
         ]),
         ("Packages", [
@@ -122,23 +122,24 @@ internal sealed class MainForm : Form
 
         if (module is null) return;
 
-        AppendLog($"警告：{module} 已注入本进程。", error: true);
-        AppendLog("Nahimic / Alienware Sound Center 的 OSD 模块有已知崩溃缺陷（0xC0000005），会让本程序运行一段时间后闪退。" +
-                  "可以运行程序目录里的「NahimicOSD-停止.cmd」后再试。", error: true);
-        _statusLabel.Text = "Nahimic OSD 已注入（已知闪退原因）";
+        AppendLog($"Warning: {module} is injected into this process.", error: true);
+        AppendLog("This Nahimic / Alienware Sound Center OSD module has a known crash bug (0xC0000005) that can take " +
+                  "the app down after a while. Run \"stop-NahimicOSD.cmd\" from the program folder and try again.", error: true);
+        _statusLabel.Text = "Nahimic OSD injected (known crash source)";
 
         bool batchMode = Environment.GetCommandLineArgs().Contains("--screenshot");
         if (!batchMode)
         {
             MessageBox.Show(this,
-                "检测到 NahimicOSD.dll（Alienware Sound Center / Nahimic 音效 OSD）已注入本程序。\n\n" +
-                "这个模块有已知缺陷，会让程序运行一段时间后闪退（Windows 事件日志里的 0xC0000005 就是它）。\n\n" +
-                "解决办法：\n" +
-                "1. 关闭本程序；\n" +
-                "2. 右键程序目录里的「NahimicOSD-停止.cmd」→ 以管理员身份运行；\n" +
-                "3. 再打开 AeroflyConv。\n\n" +
-                "（该脚本只是临时停掉 Nahimic 服务，随时可用「NahimicOSD-恢复.cmd」还原。）",
-                "AeroflyConv - 兼容性提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "NahimicOSD.dll (Alienware Sound Center / Nahimic audio OSD) is injected into this process.\n\n" +
+                "That module has a known defect that can crash the app after a while\n" +
+                "(this is the 0xC0000005 entry you may see in the Windows event log).\n\n" +
+                "Workaround:\n" +
+                "1. Close this app;\n" +
+                "2. Right-click \"stop-NahimicOSD.cmd\" in the program folder and run it as administrator;\n" +
+                "3. Start Horizon Converter again.\n\n" +
+                "(The script only stops the Nahimic service temporarily; \"restore-NahimicOSD.cmd\" undoes it.)",
+                "Horizon Converter - compatibility warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -556,13 +557,13 @@ internal sealed class MainForm : Form
                 "Any ImageSharp format: re-encodes into a TTX with a full mip chain (DXT / ETC2 / ASTC / RGBA)"),
             ConversionMode.TtxToTtx => ("Drag && drop .ttx textures here",
                 "Decodes and re-encodes a texture on this machine: change format, size or compression"),
-            ConversionMode.AudioToTsb => ("Drag && drop WAV / MP3 / FLAC / OGG here",
+            ConversionMode.AudioToTsb => ("Drag && drop WAV / MP3 / OGG here",
                 "Wraps any audio into an Aerofly TSB sound container"),
             ConversionMode.TmbToObj => ("Drag && drop .tmb models here",
                 "3D model to OBJ + MTL with every part named and its textures matched automatically"),
             ConversionMode.TsbToWav => ("Drag && drop .tsb sounds here", "Mono / stereo PCM containers to WAV"),
             ConversionMode.WavToTsb => ("Drag && drop .wav files here", "Uncompressed PCM WAV to TSB"),
-            ConversionMode.AudioToWav => ("Drag && drop .mp3 / .flac / .ogg files here", "Decodes to 16-bit PCM WAV"),
+            ConversionMode.AudioToWav => ("Drag && drop .mp3 / .ogg files here", "Decodes to 16-bit PCM WAV"),
             ConversionMode.TmToTxt => ("Drag && drop .toc / .tsc / .wad / .tmb / .tsl files here",
                 "Inflates the TM container and writes the generic type / name / value text tree"),
             ConversionMode.TtcToPng => ("Drag && drop .ttc scenery tiles here", "DXT1 / DXT5 / ETC2 / R8 tiles to PNG"),
@@ -693,7 +694,7 @@ internal sealed class MainForm : Form
     {
         using var dialog = new FolderBrowserDialog
         {
-            Description = "选择输出目录（转换结果会镜像源文件夹结构）",
+            Description = "Choose an output folder (the source tree is mirrored)",
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true,
         };

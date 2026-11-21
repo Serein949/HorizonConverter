@@ -1,4 +1,3 @@
-using FlacBox;
 using NVorbis;
 using NLayer;
 
@@ -14,10 +13,10 @@ public sealed class DecodedAudio
     public int Frames => Channels > 0 ? Pcm16.Length / (Channels * 2) : 0;
 }
 
-/// <summary>MP3 / OGG Vorbis / FLAC / WAV decoders (all pure managed).</summary>
+/// <summary>MP3 / OGG Vorbis / WAV decoders (all pure managed, MIT-licensed).</summary>
 public static class AudioDecoder
 {
-    public static readonly string[] SupportedExtensions = [".mp3", ".ogg", ".flac", ".wav"];
+    public static readonly string[] SupportedExtensions = [".mp3", ".ogg", ".wav"];
 
     public static DecodedAudio Decode(string path, Action<string>? status = null)
     {
@@ -26,8 +25,8 @@ public static class AudioDecoder
         {
             ".mp3" => DecodeMp3(path, status),
             ".ogg" => DecodeOgg(path, status),
-            ".flac" => DecodeFlac(path, status),
             ".wav" => DecodeWav(path),
+            ".flac" => throw new AeroflyFormatException("FLAC 输入已移除（上游解码器无明确许可）；请先转成 WAV 或 MP3"),
             _ => throw new AeroflyFormatException($"unsupported audio format: {ext}"),
         };
     }
@@ -82,66 +81,6 @@ public static class AudioDecoder
             SampleRate = rate,
             Channels = channels,
             Source = "ogg",
-        };
-    }
-
-    private static DecodedAudio DecodeFlac(string path, Action<string>? status)
-    {
-        status?.Invoke("Decoding FLAC ...");
-        using var stream = File.OpenRead(path);
-        var reader = new FlacReader(stream, true);
-        int guard = 0;
-        while (reader.Streaminfo is null && guard++ < 32 && reader.Read()) { }
-        FlacStreaminfo info = reader.Streaminfo
-            ?? throw new AeroflyFormatException("FLAC stream has no STREAMINFO block");
-
-        int channels = info.ChannelsCount;
-        int rate = info.SampleRate;
-        int bits = info.BitsPerSample;
-        int shift = Math.Max(0, bits - 16);
-
-        using var pcm = new MemoryStream((int)Math.Min(int.MaxValue, info.TotalSampleCount * channels * 2));
-        var buffer = new byte[channels * 4096 * 2];
-        var values = new List<int>(channels * 4096);
-
-        while (true)
-        {
-            bool more;
-            try
-            {
-                more = reader.Read();
-            }
-            catch (Exception) when (pcm.Length > 0)
-            {
-                // FlacBox throws "Frame sync is expected" once the last frame has been consumed.
-                break;
-            }
-            if (!more) break;
-            if (reader.RecordType != FlacRecordType.Frame) continue;
-            values.Clear();
-            foreach (int v in reader.GetValues()) values.Add(v);
-            int count = values.Count;
-            if (count == 0) continue;
-            int bytes = count * 2;
-            if (buffer.Length < bytes) buffer = new byte[bytes];
-            for (int i = 0; i < count; i++)
-            {
-                int s = shift > 0 ? (values[i] + (1 << (shift - 1))) >> shift : values[i];
-                if (s > 32767) s = 32767;
-                else if (s < -32768) s = -32768;
-                buffer[i * 2] = (byte)(s & 0xFF);
-                buffer[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
-            }
-            pcm.Write(buffer, 0, bytes);
-        }
-        reader.Close();
-
-        return new DecodedAudio
-        {
-            Pcm16 = pcm.ToArray(),
-            SampleRate = rate,
-            Channels = channels,
-            Source = "flac",
         };
     }
 

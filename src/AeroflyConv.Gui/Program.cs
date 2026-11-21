@@ -19,6 +19,7 @@ internal static class Program
             // where %TEMP% is not writable that throws and the app dies without any window, so point
             // TMP/TEMP at a folder we know we can write before touching WinForms.
             PrepareTempDirectory();
+            AeroflyConv.Desktop.DesktopImageDecoder.Install();
 
             try
             {
@@ -124,12 +125,12 @@ internal static class Program
     private static void ShowFatalError(Exception ex)
     {
         string message =
-            "Aerofly Converter could not start.\n\n" +
+            "Horizon Converter could not start.\n\n" +
             ex.GetType().Name + ": " + ex.Message + "\n\n" +
             "Details were written to:\n" + ErrorLogPath;
         try
         {
-            MessageBox.Show(message, "Aerofly Converter", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(message, "Horizon Converter", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         catch (Exception)
         {

@@ -1,4 +1,4 @@
-# AeroflyConv — 快得多的 Aerofly FS 转换器（C# / .NET 10）
+# Horizon Converter — 桌面 + 手机的 Aerofly FS 工具箱（C# / .NET 10）
 
 [`RishiK-06/AeroflyFS-Native-Converter`](https://github.com/RishiK-06/AeroflyFS-Native-Converter) 的 C# 重写版：
 功能一一对照，但整条处理管线都是原生代码 —— 纯托管 C# 的 LZHAM 编解码器（**真压缩，8.61×**）、
@@ -77,7 +77,7 @@ AeroflyConv tile.png -m png2ttc --ttc-format dxt1
 # 声音
 AeroflyConv engine.tsb                        # -> engine.wav
 AeroflyConv engine.wav                        # -> engine.tsb
-AeroflyConv song.flac                         # -> song.wav（也支持 .mp3 / .ogg）
+HorizonConverter song.mp3                      # -> song.wav（也支持 .ogg / .wav）
 
 # TM 容器 -> 通用文本树
 AeroflyConv airport.tmb                       # -> airport.tmb.txt
@@ -116,8 +116,8 @@ AeroflyConv some.ttx --info
   `texture2ddecoder` 逐字节一致，ASTC 编码产出的块同样两套解码器逐字节一致。
 * **容器**（`Tm/`、`Textures/`）：TTX/TTC/TSB/TM 的 chunk 树、mip 链、`compress_file`
   包装、CRC32、tmcompress 头，按原版语义重写（并兼容 IPACS 的 `string8u` 变体）。
-* **PNG**：读用 ImageSharp，写用自写编码器（RGB/RGBA、逐行 MSAD 自适应滤波）。
-* **音频**：NLayer（MP3）、NVorbis（OGG）、FlacBox（FLAC），全部纯托管。
+* **图片**：读取交给宿主平台（Windows 用 GDI+，Android 用 `BitmapFactory`），本库不自带编解码器；写 PNG 用自写编码器（RGB/RGBA、逐行 MSAD 自适应滤波）。
+* **音频**：NLayer（MP3）、NVorbis（OGG），全部纯托管；WAV 由自写解析器处理。
 * **并行**：文件级并行；单文件内部按顺序处理。
 
 > 贴图格式（DXT1 / DXT5 / ETC2 / R8 / BC5 / ASTC）的区别、体积、画质实测和选择建议，
@@ -162,7 +162,7 @@ dotnet run --project tools/CodecCheck   # 块压缩编解码 vs texture2ddecoder
   所以两者蓝色通道不同（红/绿通道逐字节一致）。这是有意修正。
 * **ASTC 编码速度**：2048² 贴图标准档约 9 s、快速档 3.4 s（1.21.6 起；1.21 约 30 s），仍比 DXT1 慢一个数量级；
   手机上更慢。只影响 PNG→ASTC，不影响解码与其他格式。
-* 输入图片支持 PNG/JPG/BMP/GIF/TGA/WebP（ImageSharp）。
+* 输入图片支持 PNG / JPG / BMP / GIF（由宿主平台解码）。
 
 ---
 
@@ -223,7 +223,7 @@ Exception code: 0xc0000005
 3. **什么都不做**：程序会自动改写到 `Documents\AeroflyConv-out`（若也不可写则依次尝试
    `%LOCALAPPDATA%\AeroflyConv\out`、临时目录、exe 同目录 `out\`），日志里会注明实际位置。
 
-另外 "auto" 模式在扫描文件夹时只处理已知的输入扩展名（`.ttx .tsb .wav .mp3 .flac .ogg .ttc
+另外 "auto" 模式在扫描文件夹时只处理已知的输入扩展名（`.ttx .tsb .wav .mp3 .ogg .ttc
 .toc .tsc .wad .tmb .tsl .zip .tme` 和图片），不会再对 `.json`、`.cfg` 之类的文件报"无法识别"。
 
 ---
@@ -313,7 +313,7 @@ Remove-Item Cert:\CurrentUser\My\583EEC3674E239898741C9809B2EF06E96F7E748
 ## 14. 安卓 / 其他平台
 
 **核心库是可移植的**：`AeroflyConv.Core` 6501 行、零平台 API（没有 System.Drawing / DllImport /
-Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
+Win32），依赖的 NLayer / NVorbis 也都是跨平台的。
 
 已经验证的落地方式：
 
@@ -338,26 +338,25 @@ Win32），依赖的 ImageSharp / NLayer / NVorbis 也都是跨平台的。
 ### 15.1 Android 应用
 
 `src/AeroflyConv.Android` 是一个 .NET for Android 原生应用（不是 MAUI，界面用 XML 布局），
-APK 在 `dist/v1.22/android/AeroflyConverter-Alpha-1.22.apk`（minSdk 24 / target 36）；
-精简版是 `AeroflyConverter-Public-1.22.apk`（只保留 **图片 → TTX / 音频 → TSB / TTX → TTX**，可与 Alpha 共存）。
+APK 在 `dist/v1.0/android/HorizonConverter-1.0.apk`（minSdk 24 / target 36，包名 `com.horizonconverter.app`）。
+**只有一个版本**（Alpha / Public 双版本已合并），功能与桌面版一致：10 个模式全都在。
 
-安装：`adb install -r AeroflyConverter-Alpha-1.22.apk`，或拷到手机后用文件管理器点击安装。
+安装：`adb install -r HorizonConverter-1.0.apk`，或拷到手机后用文件管理器点击安装。
 
-**界面（全中文，1.21.5 起回到深蓝 + 青色的扁平风格）**：
+**界面（全英文，深蓝 + 青色扁平风格）**：
 
-* 顶部**模式**是横向滑动的药丸分段控件，当前模式的说明文字直接跟在下面；
-* **文件**卡片：`添加文件`（可多选）、`文件夹`（递归扫描）、`清空`，逐个文件可点 ✕ 移除，
-  底部一行是**输出位置**（`Download/AeroflyConv` 或自选文件夹，点「更改」）；
-* **选项**卡片（按模式自动显示）：格式（自动 / DXT1 / DXT5 / ETC2 / R8 / **RGBA 无损** / ASTC 6x6 / ASTC 5x5）、
-  贴图尺寸（匹配原尺寸 / 4096 / 2048 / 1024 / 源尺寸）、编码质量（ASTC 专用）、垂直翻转、
-  压缩 TTX（LZHAM）、TTC 多级贴图；
-* **日志**默认折叠，点标题栏展开（箭头会转），展开状态被记住；转换出现失败时自动展开；
-  头部有行数与「复制 / 清空」，每行按级别上色（✓ 成功 / ✕ 失败 / ! 警告 / · 普通）；
-* `开始转换` 是渐变胶囊按钮，转换中变成「取消」，下方居中显示进度状态；
-* 转换后出现 `打开结果` / `分享`；
+* 顶部 **Mode** 是横向滑动的药丸分段控件，当前模式的说明文字直接跟在下面；
+* **FILES** 卡片：`Add files`（可多选）、`Folder`（递归扫描）、`Clear`，逐个文件可点 ✕ 移除，
+  底部一行是输出位置（`Download/HorizonConv` 或自选文件夹，点 `Change`）；
+* **OPTIONS** 卡片（按模式自动显示）：Format（Auto / DXT1 / DXT5 / ETC2 / R8 / RGBA lossless /
+  ASTC 6x6 / ASTC 5x5）、Texture size、Quality（ASTC 专用）、Flip vertically、Compress TTX (LZHAM)、TTC mipmaps；
+* **LOG** 默认折叠，点标题栏展开，展开状态被记住；转换出现失败时自动展开；
+  头部有行数与 `Copy` / `Clear`，每行按级别上色（✓ / ✕ / ! / ·）；
+* `Convert` 是渐变胶囊按钮，转换中变成 `Cancel`，下方居中显示进度；
+* 转换后出现 `Open` / `Share`；模型导出（TMB → OBJ）会打成一个 zip，里面保留 obj/mtl/贴图目录结构；
 * 所有设置存 `SharedPreferences`，下次启动沿用。
 
-也可以在应用私有目录 `Android/data/com.aeroflyconv.app/files/in` 里放文件（方便 adb 批量投放），
+也可以在应用私有目录 `Android/data/com.horizonconverter.app/files/in` 里放文件（方便 adb 批量投放），
 用 `am start ... --ez autorun true --es mode png2ttx --es format etc2` 无界面跑批（测试用）。
 
 **实机验证（vivo V2304A / Android 16 / arm64）**：
@@ -435,7 +434,7 @@ AeroflyConv livery.png -f astc6x6 --astc-quality high      # 高质量
 **图片输入**（`PNG → TTX` 已更名「图片 → TTX」，`PNG → TTC` 更名「图片 → TTC」）：
 PNG、JPG/JPEG、BMP、GIF、TGA、WebP、**PSD**、TIFF、HDR、PBM、QOI 都能直接转，格式按文件内容识别。
 
-**音频输入**：`音频 → TSB` 支持 MP3 / FLAC / OGG / WAV，直接打包成 Aerofly 音效包；
+**音频输入**：`音频 → TSB` 支持 MP3 / OGG / WAV，直接打包成 Aerofly 音效包；
 桌面端对应 `-m audio2tsb`。
 
 **TTX → TTX**：在手机上把一张 TTX 解码后再按新格式编码写回，格式、尺寸、mip 链、LZHAM 全部可控；
@@ -562,6 +561,17 @@ MTL 里的路径随之变成裸文件名（`map_Kd ext05_basecolor.png`）。在
 
 ## 17. 版本记录
 
+### 1.0（Horizon Converter，首个公开版本）
+
+* **改名 Horizon Converter**，版本号统一为 **1.0**，Alpha / Public 双版本合并为单一版本（同一个 APK、
+  同一个桌面 exe），桌面与手机功能完全一致（10 个模式）。
+* **移除 ImageSharp 与 FlacBox**（前者 Six Labors Split License 商用受限、后者上游没有许可证文件）：
+  图片解码改由宿主平台负责（Windows GDI+、Android `BitmapFactory`），因此输入格式收敛为
+  **PNG / JPG / BMP / GIF**（不再支持 PSD / TIFF / HDR / TGA / WebP / QOI）；
+  音频不再支持 FLAC，剩下 **WAV / MP3 / OGG**。
+* 界面全部改为英文；桌面与手机共用 `Horizon Converter` 名称与 `1.0` 版本号。
+* 手机端新增 **TMB → OBJ** 模式：导出为 zip（obj + mtl + 贴图，保留相对目录）。
+* APK 体积从 11.6 MB 降到 9.4 MB（去掉两个托管解码库）。
 ### 1.23.4（手机端）
 
 * **转换后保持原文件名**：输出文件名 = 输入主名 + 新扩展名，不再出现 `.converted` 或 ` (1)` 后缀；写入前会先删除同级同名旧文件（在 SAF 目录与 `Download/AeroflyConv` 两处都做了处理）。换涂装时文件名必须与原文件一致，这条很重要。
@@ -597,8 +607,8 @@ MTL 里的路径随之变成裸文件名（`map_Kd ext05_basecolor.png`）。在
 ### 1.22
 
 * **手机端输入格式放宽**：图片支持 JPG / BMP / GIF / TGA / WebP / **PSD** / TIFF / HDR / PBM / QOI；
-  音频支持 MP3 / FLAC / OGG / WAV。选择器不再按 MIME 过滤，任何文件都能选进来。
-* **新增「音频 → TSB」**：MP3 / FLAC / OGG / WAV 直接打包成 Aerofly 音效包（`AudioDecoder` → WAV → `TsbFile`）。
+  音频支持 MP3 / OGG / WAV。选择器不再按 MIME 过滤，任何文件都能选进来。
+* **新增「音频 → TSB」**：MP3 / OGG / WAV 直接打包成 Aerofly 音效包（`AudioDecoder` → WAV → `TsbFile`）。
 * **新增「TTX → TTX」**：手机端解码后按新格式重编码，支持 DXT1/DXT5/ETC2/R8/RGBA 无损/ASTC，
   可改尺寸并保留 mip 链与 LZHAM 压缩；实测 2048² ASTC 6x6 → DXT5 只花 **5 s**。
 * **新增「RGBA 无损」输出**：`type_rgba`（32 位、无块压缩），2048² + LZHAM 为 1.65 s / 934 KB，
@@ -686,10 +696,10 @@ MTL 里的路径随之变成裸文件名（`map_Kd ext05_basecolor.png`）。在
 
 | 组件 | 许可 | 说明 |
 | --- | --- | --- |
-| SixLabors.ImageSharp 3.1.5 | Six Labors Split License 1.0 | 开源/非商业免费；**商用需购买其商业许可**，或替换掉 |
+| .NET 10 / System.Drawing.Common | MIT | 桌面端图片解码（GDI+） |
+| Android `BitmapFactory` | Apache-2.0（平台） | 手机端图片解码 |
 | NLayer 3.0.0 | MIT | MP3 解码 |
 | NVorbis 0.10.5 | MIT | OGG 解码 |
-| FlacBox 1.0.1 | 上游未附许可证文件 | 仅用于 FLAC 解码；商用前建议替换 |
 | LZHAM（C# 移植） | Public Domain | 原作 Rich Geldreich，无需署名 |
 | ARM astc-encoder（参考） | Apache-2.0 | ASTC 块头布局与量化表按其对齐 |
 | AeroflyFS-Native-Converter（参考） | MIT | 文件格式参考实现，© Rishi K |

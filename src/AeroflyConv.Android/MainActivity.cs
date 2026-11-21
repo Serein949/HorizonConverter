@@ -23,21 +23,12 @@ namespace AeroflyConv.Android;
 public class MainActivity : Activity
 {
     private const int RequestPickFiles = 1001;
-#if PUBLIC_BUILD
-    /// <summary>Window and launcher label; the public build drops the Alpha tag.</summary>
-    public const string AppLabel = "Aerofly 转换器";
 
-    private const bool IsPublicBuild = true;
-
-#else
-    public const string AppLabel = "Aerofly 转换器 Alpha";
-
-    private const bool IsPublicBuild = false;
-
-#endif
+    /// <summary>Window and launcher label.</summary>
+    public const string AppLabel = "Horizon Converter";
 
     /// <summary>Window title / log prefix, always in sync with <see cref="ProductInfo.Version"/>.</summary>
-    private static readonly string ProductLabel = (IsPublicBuild ? ProductInfo.Name : ProductInfo.FullName) + " v" + ProductInfo.Version;
+    private static readonly string ProductLabel = ProductInfo.Name + " v" + ProductInfo.Version;
 
     private const int RequestPickFolder = 1002;
     private const int RequestPickOutput = 1003;
@@ -51,37 +42,34 @@ public class MainActivity : Activity
 
     private static readonly string[] ModeLabels =
     [
-        "自动识别",
+        "Auto detect",
         "TTX \u2192 PNG",
-        "图片 \u2192 TTX",
+        "Image \u2192 TTX",
         "TSB \u2192 WAV",
-        "音频 \u2192 TSB",
+        "Audio \u2192 TSB",
         "TM \u2192 TXT",
         "TTC \u2192 PNG",
-        "图片 \u2192 TTC",
+        "Image \u2192 TTC",
         "TTX \u2192 TTX",
+        "TMB \u2192 OBJ",
     ];
 
     private static readonly string[] ModeHints =
     [
-        "根据文件扩展名自动判断转换方向。",
-        "还原 DXT1/3/5、BC5、ETC1/2、ASTC（手机端）以及 RGBA/R8 为 PNG。",
-        "把 PNG / JPG / BMP / PSD 等图片重新编码成 TTX 贴图（DXT1 / DXT5 / ETC2 / R8 / RGBA 或自动）。",
-        "把 Aerofly 音效包解包成 WAV 文件。",
-        "把 MP3 / FLAC / OGG / WAV 直接打包成 Aerofly TSB 音效包。",
-        "把 TOC/TSC/WAD/TMB/TSL 容器导出为可读文本。",
-        "把地景贴图容器（.ttc）的第 0 级贴图转成 PNG。",
-        "把图片编码成 .ttc 地景贴图。",
-        "在手机上解码 TTX 再重新编码成另一种格式的 TTX。",
+        "Picks the conversion direction from the file extension.",
+        "Decodes DXT1/3/5, BC5, ETC1/2, ASTC and raw RGBA/R8 into PNG.",
+        "Re-encodes PNG / JPG / BMP images into a TTX texture (DXT1 / DXT5 / ETC2 / ASTC / R8 / RGBA).",
+        "Unpacks an Aerofly sound package into WAV.",
+        "Packs WAV / MP3 / OGG straight into an Aerofly TSB sound package.",
+        "Dumps a TOC / TSC / WAD / TMB / TSL container as readable text.",
+        "Exports the base level of a scenery texture container (.ttc) to PNG.",
+        "Encodes an image into a .ttc scenery texture.",
+        "Decodes a TTX on the device and re-encodes it in another format.",
+        "Exports a 3D model as OBJ + MTL + PNG textures, packed in one zip.",
     ];
 
     /// <summary>Indexes into <see cref="ModeLabels"/> that this build offers.</summary>
-    private static readonly int[] VisibleModeIndexes =
-#if PUBLIC_BUILD
-        [2, 4, 8];
-#else
-        [0, 1, 2, 3, 4, 5, 6, 7, 8];
-#endif
+    private static readonly int[] VisibleModeIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
     /// <summary>Mode list entry for the current pill selection.</summary>
     private int RealMode => VisibleModeIndexes[Math.Clamp(_modes.SelectedIndex, 0, VisibleModeIndexes.Length - 1)];
@@ -121,12 +109,12 @@ public class MainActivity : Activity
     private PillGroup _sizes = null!;
     private PillGroup _qualities = null!;
 
-    private static readonly string[] FormatLabels = ["自动", "DXT1", "DXT5", "ETC2", "R8", "RGBA 无损", "ASTC 6x6", "ASTC 5x5"];
+    private static readonly string[] FormatLabels = ["Auto", "DXT1", "DXT5", "ETC2", "R8", "RGBA lossless", "ASTC 6x6", "ASTC 5x5"];
     private static readonly string[] TTXFormats = ["dxt_auto", "dxt1", "dxt5", "etc2", "r8", "type_rgba", "astc6x6", "astc5x5"];
     private static readonly string[] TtcFormats = ["dxt1", "dxt1", "dxt5", "etc2", "r8", "dxt1", "dxt1", "dxt1"];
-    private static readonly string[] SizeLabels = ["匹配原尺寸", "4096", "2048", "1024", "源尺寸"];
+    private static readonly string[] SizeLabels = ["Match original", "4096", "2048", "1024", "Source (max PO2)"];
     private static readonly int?[] SizeValues = [null, 4096, 2048, 1024, null];
-    private static readonly string[] QualityLabels = ["快速", "标准", "高质量"];
+    private static readonly string[] QualityLabels = ["Fast", "Standard", "High"];
 
     private Uri? _outputTree;
     private bool _busy;
@@ -193,10 +181,10 @@ public class MainActivity : Activity
         }
         catch (Exception ex)
         {
-            Log("无法创建目录：" + ex.Message);
+            Log("Could not create the folder: " + ex.Message);
         }
 
-        Log("就绪 · " + ProductLabel + " · " + ModeLabels[RealMode] + " · 输出：" + OutputLabel());
+        Log("Ready · " + ProductLabel + " · " + ModeLabels[RealMode] + " · output: " + OutputLabel());
         UpdateModeUi();
 
         if (Intent?.GetBooleanExtra("autorun", false) == true)
@@ -277,17 +265,9 @@ public class MainActivity : Activity
         _btnConvert = FindViewById<Button>(Resource.Id.btnConvert)!;
         _scrollLog = FindViewById<ScrollView>(Resource.Id.scrollLog)!;
 
-        // "Alpha" written in a flowing script: use the system Dancing Script face, else any cursive
+        // The old "Alpha" wordmark is gone; keep the view for layout compatibility but hide it.
         TextView edition = FindViewById<TextView>(Resource.Id.tvEdition)!;
-        edition.Typeface = LoadScriptTypeface() ?? Typeface.Create("cursive", TypefaceStyle.Bold);
-        edition.Text = IsPublicBuild ? "Public" : "Alpha";
-        edition.TextSize = IsPublicBuild ? 34 : 42;
-
-        if (IsPublicBuild)
-        {
-            // This build only ships the image / audio entry points, so keep the empty state honest.
-            _tvEmpty.Text = "还没有文件\n添加 .png / .jpg / .bmp / .psd / .mp3 / .flac / .ttx";
-        }
+        edition.Visibility = ViewStates.Gone;
 
         // mode hint line under the pills
         _tvModeHint = new TextView(this) { TextSize = 11.5f };
@@ -403,6 +383,7 @@ public class MainActivity : Activity
         6 => ConversionMode.TtcToPng,
         7 => ConversionMode.PngToTtc,
         8 => ConversionMode.TtxToTtx,
+        9 => ConversionMode.TmbToObj,
         _ => ConversionMode.Auto,
     };
 
@@ -416,6 +397,7 @@ public class MainActivity : Activity
         "ttc2png" => 6,
         "png2ttc" => 7,
         "ttx2ttx" => 8,
+        "tmb2obj" or "tmb2model" or "model" => 9,
         _ => 0,
     };
 
@@ -428,7 +410,7 @@ public class MainActivity : Activity
 
         _rowFormat.Visibility = mode is 2 or 7 or 8 ? ViewStates.Visible : ViewStates.Gone;
         _rowSize.Visibility = mode is 2 or 7 or 8 ? ViewStates.Visible : ViewStates.Gone;
-        _rowFlip.Visibility = IsTextureMode(mode) ? ViewStates.Visible : ViewStates.Gone;
+        _rowFlip.Visibility = IsTextureMode(mode) || mode == 9 ? ViewStates.Visible : ViewStates.Gone;
         _rowCompress.Visibility = mode is 2 or 8 ? ViewStates.Visible : ViewStates.Gone;
         _rowTtcMips.Visibility = mode == 7 ? ViewStates.Visible : ViewStates.Gone;
 
@@ -451,7 +433,7 @@ public class MainActivity : Activity
             SetFormatVisibility([false, true, true, true, true, false, false, false]);
         }
 
-        _btnConvert.Text = "开始转换";
+        _btnConvert.Text = "Convert";
         UpdateQualityRow();
     }
 
@@ -506,6 +488,7 @@ public class MainActivity : Activity
         {
             Flip = _swFlip.Checked,
             FlipExplicit = IsTextureMode(mode),
+            ModelTextures = true,
             CompressTtx = _swCompress.Checked,
             TtcMipmaps = _swTtcMips.Checked,
             MaxParallelism = 1,
@@ -523,6 +506,9 @@ public class MainActivity : Activity
         }
 
         int sizeIndex = _sizes.SelectedIndex;
+        if (mode == 9)
+            options.ModelSubstance = false;
+
         options.TargetTextureSize = SizeValues[sizeIndex];
         options.FitExistingTexture = sizeIndex == 0;
         return options;
@@ -600,11 +586,11 @@ public class MainActivity : Activity
                 }
                 catch (Exception ex)
                 {
-                    Log("无法保存文件夹权限：" + ex.Message);
+                    Log("Could not persist the folder permission: " + ex.Message);
                 }
                 SaveState();
                 _tvOutput.Text = OutputLabel();
-                Log("输出文件夹：" + OutputLabel());
+                Log("Output folder: " + OutputLabel());
                 break;
         }
     }
@@ -616,7 +602,7 @@ public class MainActivity : Activity
         if (local.Length > 0)
         {
             _picked.Add(new Picked(local, name));
-            Log("已添加 " + name);
+            Log("Added " + name);
         }
     }
 
@@ -626,11 +612,11 @@ public class MainActivity : Activity
         {
             string rootId = DocumentsContract.GetTreeDocumentId(tree)!;
             int added = WalkTree(tree, rootId, 0);
-            Log($"文件夹扫描：找到 {added} 个可转换文件");
+            Log($"Folder scan: {added} convertible file(s)");
         }
         catch (Exception ex)
         {
-            Log("文件夹扫描失败：" + ex.Message);
+            Log("Folder scan failed: " + ex.Message);
         }
     }
 
@@ -687,7 +673,7 @@ public class MainActivity : Activity
         _rowResultActions.Visibility = ViewStates.Gone;
         _progress.Visibility = ViewStates.Invisible;
         RenderFiles();
-        SetStatus("就绪");
+        SetStatus("Ready");
     }
 
     private void RemoveFile(int index)
@@ -779,7 +765,7 @@ public class MainActivity : Activity
         }
         catch (Exception ex)
         {
-            Log("读取失败：" + ex.Message);
+            Log("Read failed: " + ex.Message);
             return "";
         }
     }
@@ -810,19 +796,19 @@ public class MainActivity : Activity
         if (_busy)
         {
             _cts?.Cancel();
-            Log("正在取消…");
+            Log("Cancelling…");
             return;
         }
 
         if (_picked.Count == 0)
         {
-            Log("请先添加文件");
+            Log("Add a file first.");
             return;
         }
 
         _busy = true;
         _cts = new CancellationTokenSource();
-        _btnConvert.Text = "取消";
+        _btnConvert.Text = "Cancel";
         _progress.Visibility = ViewStates.Visible;
         _progress.Max = _picked.Count;
         _progress.Progress = 0;
@@ -834,7 +820,7 @@ public class MainActivity : Activity
         ConvertOptions options = BuildOptions();
         CancellationToken token = _cts.Token;
 
-        Log($"\n\u2014 {files.Count} 个文件 · {ModeLabels[RealMode]} \u2014");
+        Log($"\n\u2014 {files.Count} file(s) · {ModeLabels[RealMode]} \u2014");
 
         await Task.Run(() =>
         {
@@ -843,7 +829,7 @@ public class MainActivity : Activity
             {
                 if (token.IsCancellationRequested)
                 {
-                    Log("已取消");
+                    Log("Cancelled.");
                     break;
                 }
 
@@ -852,13 +838,13 @@ public class MainActivity : Activity
                 done++;
                 int progressValue = done;
                 RunOnUiThread(() => _progress.Progress = progressValue);
-                SetStatus($"正在转换 {done}/{files.Count}");
+                SetStatus($"Converting {done}/{files.Count}");
 
                 if (!outcome.Ok || string.IsNullOrEmpty(outcome.Output))
                 {
                     failed++;
                     MarkRow(file, "\u2715", "#FF7A7A");
-                    Log($"失败 {file.DisplayName}：{outcome.Error}");
+                    Log($"Failed {file.DisplayName}: {outcome.Error}");
                     continue;
                 }
 
@@ -866,35 +852,42 @@ public class MainActivity : Activity
                 if (outcome.Summary.StartsWith("skipped", StringComparison.OrdinalIgnoreCase))
                 {
                     MarkRow(file, "\u2013", "#8A96A8");
-                    Log($"跳过 {file.DisplayName}：{outcome.Summary}");
+                    Log($"Skipped {file.DisplayName}: {outcome.Summary}");
                     continue;
                 }
 
                 string produced = outcome.Output;
+                string stem = Path.GetFileNameWithoutExtension(file.DisplayName);
+
+                // A model export produces a folder (obj + mtl + textures); ship it as one zip so
+                // the relative texture paths inside the MTL survive the trip through MediaStore.
+                if (Path.GetExtension(produced).Equals(".obj", StringComparison.OrdinalIgnoreCase))
+                    produced = ZipModelFolder(produced, stem);
+
                 // Keep the original name: only the extension changes, so a texture exported
                 // as "f14_livery.png" comes back as "f14_livery.ttx" (never ".converted" or " (1)").
-                string name = Path.GetFileNameWithoutExtension(file.DisplayName) + Path.GetExtension(produced);
+                string name = stem + Path.GetExtension(produced);
                 try
                 {
                     (string where, Uri? uri) = Publish(produced, name);
                     _results.Add(new ResultItem(name, where, uri));
                     ok++;
                     MarkRow(file, "\u2713", "#5BE49B");
-                    Log($"完成 {file.DisplayName} \u2192 {where}");
+                    Log($"Done {file.DisplayName} \u2192 {where}");
                 }
                 catch (Exception ex)
                 {
                     failed++;
                     MarkRow(file, "\u2715", "#FF7A7A");
-                    Log($"写入失败 {name}：{ex.Message}");
+                    Log($"Write failed {name}: {ex.Message}");
                 }
 
-                SetStatus($"{done}/{files.Count} · 成功 {ok}，失败 {failed}");
+                SetStatus($"{done}/{files.Count} · {ok} ok, {failed} failed");
             }
 
             SetStatus(failed == 0
-                ? $"已转换 {ok} 个文件"
-                : $"成功 {ok} 个，失败 {failed} 个");
+                ? $"Converted {ok} file(s)"
+                : $"{ok} succeeded, {failed} failed");
 
             // a failure is worth seeing: open the log panel so the reason is on screen
             if (failed > 0 && _scrollLog.Visibility != ViewStates.Visible)
@@ -903,8 +896,19 @@ public class MainActivity : Activity
 
         _busy = false;
         _cts = null;
-        _btnConvert.Text = "开始转换";
+        _btnConvert.Text = "Convert";
         _rowResultActions.Visibility = _results.Count > 0 ? ViewStates.Visible : ViewStates.Gone;
+    }
+
+    /// <summary>Packs an exported model folder (obj, mtl, textures) into a single zip.</summary>
+    private string ZipModelFolder(string objPath, string stem)
+    {
+        string directory = Path.GetDirectoryName(objPath)!;
+        string zip = Path.Combine(CacheDir!.AbsolutePath, stem + ".zip");
+        if (File.Exists(zip)) File.Delete(zip);
+        System.IO.Compression.ZipFile.CreateFromDirectory(
+            directory, zip, System.IO.Compression.CompressionLevel.Optimal, includeBaseDirectory: false);
+        return zip;
     }
 
     private (string Where, Uri? Uri) Publish(string localPath, string displayName)
@@ -932,7 +936,7 @@ public class MainActivity : Activity
             }
             catch (Exception ex)
             {
-                Log("写入所选文件夹失败：" + ex.Message);
+                Log("Writing to the selected folder failed: " + ex.Message);
             }
         }
 
@@ -987,7 +991,7 @@ public class MainActivity : Activity
         }
         catch (Exception ex)
         {
-            Log("覆盖同名文件失败：" + ex.Message);
+            Log("Could not replace the existing file: " + ex.Message);
         }
     }
 
@@ -1009,7 +1013,7 @@ public class MainActivity : Activity
         }
         catch (Exception ex)
         {
-            Log("覆盖同名文件失败：" + ex.Message);
+            Log("Could not replace the existing file: " + ex.Message);
         }
     }
 
@@ -1028,7 +1032,7 @@ public class MainActivity : Activity
         ResultItem item = _results[^1];
         if (item.Uri is null)
         {
-            Log("无法打开 " + item.DisplayName);
+            Log("Could not open " + item.DisplayName);
             return;
         }
         try
@@ -1040,7 +1044,7 @@ public class MainActivity : Activity
         }
         catch (Exception ex)
         {
-            Log("没有应用能打开此文件：" + ex.Message);
+            Log("No app can open this file: " + ex.Message);
         }
     }
 
@@ -1061,11 +1065,11 @@ public class MainActivity : Activity
             {
                 intent.PutExtra(Intent.ExtraText, item.Where);
             }
-            StartActivity(Intent.CreateChooser(intent, "分享 " + item.DisplayName)!);
+            StartActivity(Intent.CreateChooser(intent, "Share " + item.DisplayName)!);
         }
         catch (Exception ex)
         {
-            Log("分享失败：" + ex.Message);
+            Log("Share failed: " + ex.Message);
         }
     }
 
@@ -1110,7 +1114,7 @@ public class MainActivity : Activity
         }
         catch (Exception)
         {
-            return "已选文件夹";
+            return "Selected folder";
         }
     }
 
@@ -1168,17 +1172,17 @@ public class MainActivity : Activity
     {
         Color color;
         string glyph;
-        if (message.Contains("失败") || message.Contains("错误") || message.StartsWith("FAIL", StringComparison.Ordinal))
+        if (message.Contains("failed") || message.Contains("Failed") || message.StartsWith("FAIL", StringComparison.Ordinal))
         {
             color = Color.ParseColor("#FF7A7A");
             glyph = "\u2715";
         }
-        else if (message.Contains("完成") || message.Contains("成功") || message.StartsWith("OK", StringComparison.Ordinal))
+        else if (message.StartsWith("Done", StringComparison.Ordinal) || message.Contains("succeeded") || message.StartsWith("OK", StringComparison.Ordinal))
         {
             color = Color.ParseColor("#5BE49B");
             glyph = "\u2713";
         }
-        else if (message.Contains("警告") || message.Contains("无法"))
+        else if (message.Contains("warn") || message.Contains("Warn") || message.Contains("Could not"))
         {
             color = Color.ParseColor("#FFC46B");
             glyph = "!";
@@ -1203,7 +1207,7 @@ public class MainActivity : Activity
 
         _logText.AppendLine(glyph + "  " + message);
         _logCount++;
-        _tvLogCount.Text = _logCount + " 条";
+        _tvLogCount.Text = _logCount + (_logCount == 1 ? " entry" : " entries");
 
         if (_scrollLog.ChildCount > 0)
             _scrollLog.Post(() => _scrollLog.FullScroll(FocusSearchDirection.Down));
@@ -1234,7 +1238,7 @@ public class MainActivity : Activity
         string text = _logText.ToString();
         if (text.Length == 0)
         {
-            Toast.MakeText(this, "日志是空的", ToastLength.Short)?.Show();
+            Toast.MakeText(this, "Log is empty", ToastLength.Short)?.Show();
             return;
         }
 
@@ -1242,12 +1246,12 @@ public class MainActivity : Activity
         {
             var clipboard = (ClipboardManager?)GetSystemService(ClipboardService);
             if (clipboard is not null)
-                clipboard.PrimaryClip = ClipData.NewPlainText("Aerofly 日志", text);
-            Toast.MakeText(this, "日志已复制", ToastLength.Short)?.Show();
+                clipboard.PrimaryClip = ClipData.NewPlainText("Horizon Converter log", text);
+            Toast.MakeText(this, "Log copied", ToastLength.Short)?.Show();
         }
         catch (Exception ex)
         {
-            Toast.MakeText(this, "复制失败：" + ex.Message, ToastLength.Short)?.Show();
+            Toast.MakeText(this, "Copy failed: " + ex.Message, ToastLength.Short)?.Show();
         }
     }
 
@@ -1282,14 +1286,14 @@ public class MainActivity : Activity
         }
         catch (Exception ex)
         {
-            Log("无法列出输入文件：" + ex.Message);
+            Log("Could not list the input files: " + ex.Message);
             return;
         }
 
         _picked.Clear();
         foreach (string file in files) _picked.Add(new Picked(file, Path.GetFileName(file)));
         RenderFiles();
-        Log($"界面演示：{_picked.Count} 个文件");
+        Log($"UI demo: {_picked.Count} file(s)");
 
         if (_picked.Count > 0) await OnConvertClicked();
     }
@@ -1309,14 +1313,14 @@ public class MainActivity : Activity
         }
         catch (Exception ex)
         {
-            WriteResult("无法列出输入文件：" + ex.Message);
+            WriteResult("cannot list input files: " + ex.Message);
             return;
         }
 
-        Log($"自动运行：{files.Count} 个文件（{inputDir}）");
+        Log($"Autorun: {files.Count} file(s) in {inputDir}");
         if (files.Count == 0)
         {
-            WriteResult("没有输入文件");
+            WriteResult("no input files");
             return;
         }
 
@@ -1333,19 +1337,19 @@ public class MainActivity : Activity
                 if (outcome.Ok && outcome.Summary.StartsWith("skipped", StringComparison.OrdinalIgnoreCase))
                 {
                     lines.Add($"SKIP {Path.GetFileName(file)}: {outcome.Summary}");
-                    Log($"跳过 {Path.GetFileName(file)}");
+                    Log($"Skipped {Path.GetFileName(file)}");
                 }
                 else if (outcome.Ok && !string.IsNullOrEmpty(outcome.Output))
                 {
                     string dest = Path.Combine(outDir, Path.GetFileName(outcome.Output));
                     File.Copy(outcome.Output, dest, overwrite: true);
                     lines.Add($"OK {Path.GetFileName(file)} -> {dest} | {outcome.Summary}");
-                    Log($"完成 {Path.GetFileName(file)} -> {Path.GetFileName(dest)}");
+                    Log($"Done {Path.GetFileName(file)} -> {Path.GetFileName(dest)}");
                 }
                 else
                 {
                     lines.Add($"FAIL {Path.GetFileName(file)}: {outcome.Error}");
-                    Log($"失败 {Path.GetFileName(file)}：{outcome.Error}");
+                    Log($"Failed {Path.GetFileName(file)}: {outcome.Error}");
                 }
             }
         });
@@ -1359,11 +1363,11 @@ public class MainActivity : Activity
         {
             string path = Path.Combine(OutputDirectory(), "result.txt");
             File.WriteAllText(path, text);
-            Log("结果已写入：" + path);
+            Log("Result written: " + path);
         }
         catch (Exception ex)
         {
-            Log("结果写入失败：" + ex.Message);
+            Log("Could not write the result: " + ex.Message);
         }
     }
 

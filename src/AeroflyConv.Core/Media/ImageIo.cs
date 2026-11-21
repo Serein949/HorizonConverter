@@ -1,35 +1,44 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-
 namespace AeroflyConv.Core.Media;
 
-/// <summary>Image input (ImageSharp) and fast PNG output (<see cref="PngWriter"/>).</summary>
+/// <summary>
+/// Image input. Decoding itself is supplied by the host platform (Windows uses GDI+,
+/// Android uses BitmapFactory) so the converter core carries no third-party image codec.
+/// </summary>
 public static class ImageIo
 {
+    /// <summary>Extensions the converter accepts; the platform decoder decides what it can read.</summary>
     public static readonly string[] SupportedExtensions =
     [
-        ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tga", ".webp",
-        ".psd", ".tif", ".tiff", ".hdr", ".pbm", ".qoi",
+        ".png", ".jpg", ".jpeg", ".bmp", ".gif",
     ];
 
-    /// <summary>Loads an image as tightly packed RGBA8 (top row first).</summary>
+    /// <summary>
+    /// Decodes an image file. The host registers <see cref="Decoder"/> once at startup
+    /// (see the CLI / GUI / Android entry points).
+    /// </summary>
+    public static Func<string, (byte[] Rgba, int Width, int Height)>? Decoder;
+
     public static (byte[] Rgba, int Width, int Height) LoadRgba(string path)
     {
+        Func<string, (byte[] Rgba, int Width, int Height)>? decoder = Decoder;
+        if (decoder is null)
+            throw new AeroflyFormatException("no image decoder registered (host did not call ImageIo.Decoder)");
+
         try
         {
-            using Image<Rgba32> image = Image.Load<Rgba32>(path);
-            int w = image.Width, h = image.Height;
-            var rgba = new byte[w * h * 4];
-            image.CopyPixelDataTo(rgba);
-            return (rgba, w, h);
+            (byte[] rgba, int width, int height) = decoder(path);
+            if (width <= 0 || height <= 0 || rgba.Length < width * height * 4)
+                throw new AeroflyFormatException($"decoder returned an empty image for {Path.GetFileName(path)}");
+            return (rgba, width, height);
         }
-        catch (UnknownImageFormatException)
+        catch (AeroflyFormatException)
         {
-            throw new AeroflyFormatException($"unsupported image format: {Path.GetFileName(path)}");
+            throw;
         }
-        catch (InvalidImageContentException ex)
+        catch (Exception ex)
         {
-            throw new AeroflyFormatException($"cannot read image {Path.GetFileName(path)}: {ex.Message}", ex);
+            throw new AeroflyFormatException(
+                $"cannot read image {Path.GetFileName(path)}: {ex.Message}", ex);
         }
     }
 
