@@ -46,6 +46,17 @@ internal sealed class NavList : Control
         }
     }
 
+    /// <summary>Selects the n-th non-header entry (used by the screenshot test hook).</summary>
+    public void SelectIndex(int index)
+    {
+        int seen = 0;
+        for (int i = 0; i < _entries.Count; i++)
+        {
+            if (_entries[i].IsHeader) continue;
+            if (seen++ == index) { SelectedIndex = i; return; }
+        }
+    }
+
     public NavEntry? Selected => _selected >= 0 && _selected < _entries.Count ? _entries[_selected] : null;
 
     public void SetEntries(IEnumerable<NavEntry> entries)

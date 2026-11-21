@@ -110,6 +110,15 @@ internal static class Program
                     options.AstcQuality = quality;
                     break;
                 }
+                case "--y-up":
+                    options.ModelYUp = true;
+                    break;
+                case "--no-textures":
+                    options.ModelTextures = false;
+                    break;
+                case "--no-uv-flip":
+                    options.ModelFlipV = false;
+                    break;
                 case "--zoom":
                     options.TtcZoom = int.Parse(RequireArg(args, ref i, arg));
                     break;
@@ -245,6 +254,7 @@ internal static class Program
         "tme2zip" => ConversionMode.TmeToZip,
         "audio2tsb" or "tsbencode" => ConversionMode.AudioToTsb,
         "ttx2ttx" or "recode" or "retranscode" => ConversionMode.TtxToTtx,
+        "tmb2obj" or "tmb2model" or "model" or "obj" => ConversionMode.TmbToObj,
         _ => throw new ArgumentException($"unknown mode: {value}"),
     };
 
@@ -269,7 +279,7 @@ internal static class Program
             Options:
               -m, --mode <name>       auto|ttx2png|png2ttx|tsb2wav|wav2tsb|audio2wav|
                                       tm2txt|ttc2png|png2ttc|zip2tme|tme2zip|
-                                      audio2tsb|ttx2ttx
+                                      audio2tsb|ttx2ttx|tmb2obj
               -o, --output <path>     output path (single input only)
               -d, --outdir <dir>      write outputs below this folder (mirrors input folders).
                                       Needed when the source folder is read-only, e.g. inside the
@@ -298,6 +308,8 @@ internal static class Program
               AeroflyConv "C:\Aerofly FS 4\aircraft" -m ttx2png -j 8
               AeroflyConv livery.png -m png2ttx -f dxt_auto --flip
               AeroflyConv scenery.tmb -m tm2txt
+              AeroflyConv a350_1000.tmb -m tmb2obj
+              (tmb2obj extras: --y-up, --no-textures, --no-uv-flip)
               AeroflyConv "E:\SteamLibrary\...\aircraft" -d D:\extracted -j 16
             """);
     }

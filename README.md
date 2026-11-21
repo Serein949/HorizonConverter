@@ -453,7 +453,76 @@ PNG、JPG/JPEG、BMP、GIF、TGA、WebP、**PSD**、TIFF、HDR、PBM、QOI 都�
 
 ---
 
-## 16. 版本记录
+## 16. 3D 模型导出（TMB → OBJ / MTL）
+
+Aerofly 的模型文件是 `.tmb`（和贴图一样的 LZHAM 容器，里面是 `tmxglscene` 节点树）。
+桌面版可以把任意 `.tmb` —— 飞机、机场、地景物件 —— 直接转成 **OBJ + MTL + PNG 贴图**，
+用 Blender / 3ds Max / Maya / SketchUp 打开继续编辑。
+
+```powershell
+AeroflyConv a350_1000.tmb -m tmb2obj
+AeroflyConv "E:\SteamLibrary\steamapps\common\Aerofly FS 4 Flight Simulator\aircraft\a350_1000" -m tmb2obj -d D:\models -j 8
+AeroflyConv a320.tmb -m tmb2obj --y-up          # Blender / glTF 习惯的 Y 轴向上
+AeroflyConv a320.tmb -m tmb2obj --no-textures   # 只要几何，不导出贴图
+```
+
+GUI 里对应侧栏 **3D → TMB → 模型 (OBJ)**。
+
+### 导出结果
+
+| 文件 | 内容 |
+|---|---|
+| `<名字>.obj` | 每个部件一个 `o` / `g`，带 `v` / `vn` / `vt` 与三角面 |
+| `<名字>.mtl` | 每种材质一条，`map_Kd` / `map_Bump` / `map_Ks` / `map_Ke` |
+| `<名字>_textures/*.png` | 材质引用的 TTX 自动解码成 PNG（color / normal / specular / reflection / ambient） |
+| `<名字>-parts.csv` | 部件清单：部件名、材质名、三角面数、用到的贴图 |
+
+### 部件名称
+
+部件名直接取自模型的 `geometry.name`，原样保留、不做「美化」，所以在 Blender 的
+大纲视图里就是游戏里的零件名，例如：
+
+```
+WingL  WingR  StabilizerVertical  StabilizerHorizontalL  StrobeRear  NoseGearPart3  RNoseWheel
+```
+
+只有 OBJ 不允许的字符（空格、括号、中文标点等）会被替换成 `_`；重名自动加 `_2`。
+以 A350-1000 为例：**296 个部件 / 246,663 个三角面 / 12 种材质 / 52 张贴图**，
+部件清单 `a350_1000-parts.csv` 第一行就是 `"WingL","ext05",5485,"ext05_wingl_color ext05_wingl_ambient ..."`。
+
+### 贴图自动匹配
+
+贴图名来自材质的 `texture_list`（形如 `ext01_fuselage_color`、`ext05_wingl_normal`），
+程序按「就近优先」查找：先找模型同目录（含涂装子目录）里的 `.ttx`，再找两级父目录，
+并且 **同一个名字优先取离模型最近的那份** —— 否则 `aircraft\` 下几百架飞机的
+`ext01_fuselage_color.ttx` 会互相顶掉（早期版本就踩过：A350 被套上了二战运输机的贴图）。
+
+匹配顺序：完全同名 → 后缀匹配（涂装包会加前缀，如 `sa_air_china_ext01_fuselage_color`）→
+前缀匹配 → 去掉前缀后的后缀匹配。找不到的贴图会在 MTL 里写成注释
+`# map_Kd xxx.ttx (not converted)`，并在日志里给出 `N textures not found`。
+
+### 坐标与朝向
+
+源数据是 **Z 轴向上、X 轴前后**（A350 包围盒 X 73.9 / Y 64.6 / Z 17.2，正好是机长 / 翼展 / 机高），
+所以默认原样输出，用 Blender 的 `Forward: Y, Up: Z` 导入即可。加 `--y-up` 会转成 Y 轴向上。
+UV 默认不翻转（Aerofly 的模型 UV 已经是 OBJ 约定）；GUI 里的「Flip UV vertically」只给个别反着的模型用。
+
+![TMB 转 OBJ 后在 Blender 里渲染](docs/model-obj.png)
+
+> 上面这张图是导出的 `a350_1000.obj` 在 Blender 4.5 里直接打开、只用两盏太阳光渲染的结果：
+> 涂装、舱门、窗户、发动机、翼尖小翼全部来自模型自带的 UV 与 TTX 贴图。
+
+---
+
+## 17. 版本记录
+
+### 1.23
+
+* **桌面版补齐手机 Alpha 版的全部功能**：图片输入（PSD / TIFF / HDR / BMP / GIF / TGA / WebP / QOI）、
+  「音频 → TSB」、 「TTX → TTX」、RGBA 无损输出、ASTC 6x6 / 5x5 编码与三档质量。
+* **新增 TMB → 模型（OBJ / MTL / PNG 贴图 / 部件 CSV）**：部件名原样保留、贴图就近匹配。
+* GUI 侧栏新增 **3D** 分类与 **TTX → TTX**，纹理模式新增「ASTC 质量」下拉框；不适用的复选框改为隐藏。
+* 实测：A350-1000 296 部件 / 246,663 三角面 / 52 张贴图，6 s 出 32 MB OBJ；A320 1562 部件 19 s。
 
 ### 1.22
 

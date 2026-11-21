@@ -17,6 +17,9 @@ internal sealed class MainForm : Form
     private readonly GlassSelect _formatSelect = new();
     private readonly GlassSelect _threadsSelect = new();
     private readonly CheckBox _flipCheck = new();
+    private readonly CheckBox _yUpCheck = new();
+    private readonly GlassSelect _qualitySelect = new();
+    private Label? _qualityLabel;
     private readonly CheckBox _mipmapsCheck = new();
     private readonly CheckBox _compressCheck = new();
     private readonly GlassListBox _fileList = new();
@@ -41,6 +44,7 @@ internal sealed class MainForm : Form
     private bool _busy;
     private bool _flipRelevant;
     private bool _mipmapsRelevant;
+    private bool _yUpRelevant;
     private bool _compressRelevant;
 
     private static readonly (string Category, NavEntry[] Items)[] Modes =
@@ -50,16 +54,20 @@ internal sealed class MainForm : Form
         ]),
         ("Textures", [
             new NavEntry { Text = "TTX \u2192 PNG", Mode = ConversionMode.TtxToPng },
-            new NavEntry { Text = "PNG \u2192 TTX", Mode = ConversionMode.PngToTtx },
+            new NavEntry { Text = "\u56fe\u7247 \u2192 TTX", Mode = ConversionMode.PngToTtx },
+            new NavEntry { Text = "TTX \u2192 TTX", Mode = ConversionMode.TtxToTtx },
+        ]),
+        ("3D", [
+            new NavEntry { Text = "TMB \u2192 \u6a21\u578b (OBJ)", Mode = ConversionMode.TmbToObj },
         ]),
         ("Audio", [
             new NavEntry { Text = "TSB \u2192 WAV", Mode = ConversionMode.TsbToWav },
-            new NavEntry { Text = "WAV \u2192 TSB", Mode = ConversionMode.WavToTsb },
+            new NavEntry { Text = "\u97f3\u9891 \u2192 TSB", Mode = ConversionMode.AudioToTsb },
             new NavEntry { Text = "MP3 / FLAC / OGG \u2192 WAV", Mode = ConversionMode.AudioToWav },
         ]),
         ("Scenery", [
             new NavEntry { Text = "TTC \u2192 PNG", Mode = ConversionMode.TtcToPng },
-            new NavEntry { Text = "PNG \u2192 TTC", Mode = ConversionMode.PngToTtc },
+            new NavEntry { Text = "\u56fe\u7247 \u2192 TTC", Mode = ConversionMode.PngToTtc },
             new NavEntry { Text = "Compressed \u2192 TXT", Mode = ConversionMode.TmToTxt },
         ]),
         ("Packages", [
@@ -300,6 +308,9 @@ internal sealed class MainForm : Form
         ConfigureCheck(_flipCheck, "Flip vertically (Aerofly stores textures bottom-up)");
         ConfigureCheck(_mipmapsCheck, "TTC mipmaps");
         ConfigureCheck(_compressCheck, "Compress TTX (LZHAM)");
+        ConfigureCheck(_yUpCheck, "Y-up (Blender / glTF)");
+        _yUpCheck.Margin = new Padding(0, 0, 26, 0);
+        _yUpCheck.Visible = false;
         _mipmapsCheck.Checked = true;
         _compressCheck.Checked = true;
         _flipCheck.Margin = new Padding(0, 0, 26, 0);
@@ -307,6 +318,7 @@ internal sealed class MainForm : Form
         row2.Controls.Add(_flipCheck);
         row2.Controls.Add(_mipmapsCheck);
         row2.Controls.Add(_compressCheck);
+        row2.Controls.Add(_yUpCheck);
 
         var row3 = new FlowLayoutPanel
         {
@@ -355,6 +367,24 @@ internal sealed class MainForm : Form
             "1024 px",
             "Source (max PO2)",
         ]);
+        _qualityLabel = new Label
+        {
+            Text = "ASTC",
+            ForeColor = Theme.TextMuted,
+            AutoSize = true,
+            Margin = new Padding(10, 12, 8, 0),
+            BackColor = Color.Transparent,
+            Visible = false,
+        };
+        _qualitySelect.Width = 132;
+        _qualitySelect.Height = 30;
+        _qualitySelect.Margin = new Padding(0, 3, 0, 0);
+        _qualitySelect.SetItems(["Fast", "Standard", "High"]);
+        _qualitySelect.SelectedIndex = 1;
+        _qualitySelect.Visible = false;
+        row3.Controls.Add(_qualityLabel);
+        row3.Controls.Add(_qualitySelect);
+
         row3.Controls.Add(outLabel);
         row3.Controls.Add(_outDirButton);
         row3.Controls.Add(_outDirResetButton);
@@ -491,6 +521,9 @@ internal sealed class MainForm : Form
 
     // ------------------------------------------------------------------ behaviour
 
+    /// <summary>Selects a sidebar entry by flat index; used by the --screenshot / --nav test hook.</summary>
+    internal void SelectNav(int index) => _nav.SelectIndex(index);
+
     private ConversionMode CurrentMode => _nav.Selected?.Mode ?? ConversionMode.TtxToPng;
 
     private int SelectedThreads
@@ -514,8 +547,14 @@ internal sealed class MainForm : Form
                 "X-Plane 12 机模 → Aerofly FS 4：模型、材质、可动部件、贴图一起生成，可直接装进 Aerofly"),
             ConversionMode.TtxToPng => ("Drag && drop .ttx textures here\nor use \"Add files\"",
                 "DXT1/3/5, BC5 normal maps, ETC2, raw RGBA and R8 textures to PNG"),
-            ConversionMode.PngToTtx => ("Drag && drop PNG / JPG / TGA images here",
-                "Writes a shipping-style TTX with a full mip chain and LZHAM compress_file"),
+            ConversionMode.PngToTtx => ("Drag && drop PNG / JPG / BMP / PSD / TIFF images here",
+                "Any ImageSharp format: re-encodes into a TTX with a full mip chain (DXT / ETC2 / ASTC / RGBA)"),
+            ConversionMode.TtxToTtx => ("Drag && drop .ttx textures here",
+                "Decodes and re-encodes a texture on this machine: change format, size or compression"),
+            ConversionMode.AudioToTsb => ("Drag && drop WAV / MP3 / FLAC / OGG here",
+                "Wraps any audio into an Aerofly TSB sound container"),
+            ConversionMode.TmbToObj => ("Drag && drop .tmb models here",
+                "3D model to OBJ + MTL with every part named and its textures matched automatically"),
             ConversionMode.TsbToWav => ("Drag && drop .tsb sounds here", "Mono / stereo PCM containers to WAV"),
             ConversionMode.WavToTsb => ("Drag && drop .wav files here", "Uncompressed PCM WAV to TSB"),
             ConversionMode.AudioToWav => ("Drag && drop .mp3 / .flac / .ogg files here", "Decodes to 16-bit PCM WAV"),
@@ -539,15 +578,24 @@ internal sealed class MainForm : Form
         _convertButton.Width = isAircraft ? 160 : 130;
 
         _flipRelevant = mode is ConversionMode.TtxToPng or ConversionMode.PngToTtx or
-            ConversionMode.TtcToPng or ConversionMode.PngToTtc;
+            ConversionMode.TtcToPng or ConversionMode.PngToTtc or ConversionMode.TtxToTtx or
+            ConversionMode.TmbToObj;
         _mipmapsRelevant = mode == ConversionMode.PngToTtc;
-        _compressRelevant = mode == ConversionMode.PngToTtx;
+        _compressRelevant = mode is ConversionMode.PngToTtx or ConversionMode.TtxToTtx;
+        _yUpRelevant = mode == ConversionMode.TmbToObj;
+        _yUpCheck.Visible = _yUpRelevant;
+        _yUpCheck.Enabled = _yUpRelevant;
         _flipCheck.Enabled = _flipRelevant;
-        _flipCheck.Checked = _flipRelevant;
+        _flipCheck.Checked = _flipRelevant && mode != ConversionMode.TmbToObj;
+        _flipCheck.Text = mode == ConversionMode.TmbToObj
+            ? "Flip UV vertically (Aerofly stores V bottom-up)"
+            : "Flip vertically (Aerofly stores textures bottom-up)";
         _mipmapsCheck.Enabled = _mipmapsRelevant;
+        _mipmapsCheck.Visible = _mipmapsRelevant;
         _compressCheck.Enabled = _compressRelevant;
+        _compressCheck.Visible = _compressRelevant;
 
-        if (mode == ConversionMode.PngToTtx)
+        if (mode is ConversionMode.PngToTtx or ConversionMode.TtxToTtx)
         {
             _formatSelect.SetItems([
                 "FS4 PC \u2014 DXT1/5 (auto)",
@@ -584,6 +632,11 @@ internal sealed class MainForm : Form
             _formatLabel.Visible = false;
             _formatSelect.Visible = false;
         }
+
+        bool astcSelected = (mode is ConversionMode.PngToTtx or ConversionMode.TtxToTtx) &&
+            _formatSelect.SelectedIndex >= 7;
+        if (_qualityLabel is not null) _qualityLabel.Visible = astcSelected;
+        _qualitySelect.Visible = astcSelected;
 
         UpdateHint();
         UpdateFilesSubtitle();
@@ -731,6 +784,15 @@ internal sealed class MainForm : Form
             OutputDirectory = _outputDirectory,
             TargetTextureSize = SelectedTextureSize,
             FitExistingTexture = _sizeSelect.SelectedIndex <= 0,
+            ModelTextures = true,
+            ModelFlipV = _flipCheck.Checked,
+            ModelYUp = _yUpCheck.Checked,
+            AstcQuality = _qualitySelect.SelectedIndex switch
+            {
+                0 => AeroflyConv.Core.Codecs.AstcQuality.Fast,
+                2 => AeroflyConv.Core.Codecs.AstcQuality.High,
+                _ => AeroflyConv.Core.Codecs.AstcQuality.Standard,
+            },
         };
 
         var files = _fileList.Items.Cast<string>().ToList();

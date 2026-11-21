@@ -52,6 +52,11 @@ internal static class Program
                 string path = Path.GetFullPath(args[1]);
                 _trace = Environment.GetEnvironmentVariable("AEROFLYCONV_UI_TRACE") == "1";
                 using var form = new MainForm();
+                for (int i = 2; i + 1 < args.Length; i++)
+                {
+                    if (args[i] == "--nav" && int.TryParse(args[i + 1], out int navIndex))
+                        form.SelectNav(navIndex);
+                }
                 var timer = new System.Windows.Forms.Timer { Interval = 1000 };
                 timer.Tick += (_, _) =>
                 {

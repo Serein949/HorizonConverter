@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using AeroflyConv.Core.Aerofly;
 using AeroflyConv.Core.Media;
+using AeroflyConv.Core.Modeling;
 using AeroflyConv.Core.Textures;
 using AeroflyConv.Core.Tm;
 
@@ -20,7 +22,9 @@ public enum ConversionMode
     TmeToZip,
     AudioToTsb,
     TtxToTtx,
-    Auto,    XPlaneAircraft,
+    TmbToObj,
+    Auto,
+    XPlaneAircraft,
 }
 
 public sealed class ConvertOptions
@@ -79,6 +83,15 @@ public sealed class ConvertOptions
     /// </summary>
     public Codecs.AstcQuality AstcQuality { get; set; } = Codecs.AstcQuality.Standard;
 
+    /// <summary>Model export: convert referenced .ttx textures to PNG next to the OBJ.</summary>
+    public bool ModelTextures { get; set; } = true;
+
+    /// <summary>Model export: convert the Z-up scene to Y-up (game engine convention).</summary>
+    public bool ModelYUp { get; set; }
+
+    /// <summary>Model export: flip the V texture coordinate (TTX rows are bottom-up).</summary>
+    public bool ModelFlipV { get; set; }
+
     /// <summary>Set by <see cref="Converter.ConvertAll"/> so folder conversions mirror their layout.</summary>
     public string? MirrorRoot { get; set; }
 
@@ -113,6 +126,7 @@ public static class Converter
         ConversionMode.TmeToZip => [".tme"],
         ConversionMode.AudioToTsb => [".mp3", ".flac", ".ogg", ".wav"],
         ConversionMode.TtxToTtx => [".ttx"],
+        ConversionMode.TmbToObj => [".tmb", ".tmo"],
         _ => [],
     };
 
@@ -157,6 +171,7 @@ public static class Converter
         ConversionMode.TmeToZip => ".zip",
         ConversionMode.AudioToTsb => ".tsb",
         ConversionMode.TtxToTtx => ".ttx",
+        ConversionMode.TmbToObj => ".obj",
         _ => ".out",
     };
 
@@ -326,6 +341,7 @@ public static class Converter
             ConversionMode.TmeToZip => TmeToZip(input, output),
             ConversionMode.AudioToTsb => AudioToTsb(input, output, log),
             ConversionMode.TtxToTtx => TtxToTtx(input, output, options, log),
+            ConversionMode.TmbToObj => TmbToObj(input, output, options, log),
             _ => throw new AeroflyFormatException($"cannot detect a conversion for {Path.GetFileName(input)}"),
         };
 
@@ -703,6 +719,36 @@ public static class Converter
             double ratio = (double)result.PayloadBytes / Math.Max(1, result.Data.Length);
             summary += $" (LZHAM {result.PayloadBytes:N0} -> {result.Data.Length:N0}, {ratio:0.0}x)";
         }
+        return summary;
+    }
+
+    /// <summary>
+    /// Converts an Aerofly .tmb model into Wavefront OBJ + MTL. Every geometry node becomes an
+    /// OBJ group named after the part, materials keep their texture names, and the referenced
+    /// .ttx textures are converted to PNG next to the model so DCC tools can show them.
+    /// </summary>
+    private static string TmbToObj(string input, string output, ConvertOptions options, Action<string>? log)
+    {
+        log?.Invoke($"Reading {Path.GetFileName(input)} ...");
+        TmbScene scene = TmbReader.Read(input);
+        if (scene.Geometries.Count == 0)
+            throw new AeroflyFormatException("no geometry in this file (is it a .tmb scene?)");
+
+        var exportOptions = new ObjExportOptions
+        {
+            ApplyTransform = true,
+            ExportTextures = options.ModelTextures,
+            FlipV = options.ModelFlipV,
+            YUp = options.ModelYUp,
+            SearchRoot = Path.GetDirectoryName(Path.GetFullPath(input)),
+            Log = log,
+        };
+
+        ObjExportResult result = ObjExporter.Export(scene, output, exportOptions);
+        string summary = $"{result.Parts} parts, {result.Triangles:N0} triangles, " +
+                         $"{result.Materials} materials, {result.TexturesWritten} textures";
+        if (result.MissingTextures.Count > 0)
+            summary += $", {result.MissingTextures.Count} textures not found";
         return summary;
     }
 

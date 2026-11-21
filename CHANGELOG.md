@@ -5,6 +5,38 @@
 
 ---
 
+## [1.22] - 2026-11-15
+
+### 新增
+
+- **手机端输入格式放宽**：「PNG → TTX」改名「图片 → TTX」，直接支持 JPG / JPEG / BMP / GIF / TGA / WebP /
+  **PSD** / TIFF / HDR / PBM / QOI，格式按文件内容识别；选择器不再按 MIME 过滤，任何文件都能选进来。
+- **新增「音频 → TSB」**：MP3 / FLAC / OGG / WAV 直接打包成 Aerofly 音效包（`AudioDecoder` → WAV → `TsbFile`）。
+  `WAV → TSB` 并入该模式。
+- **新增「TTX → TTX」**：手机端解码后按新格式重编码，支持 DXT1 / DXT5 / ETC2 / R8 / RGBA 无损 / ASTC，
+  可改尺寸并保留 mip 链与 LZHAM 压缩；同名输入不覆盖原文件（写成 `*.converted.ttx`）。
+  实测 2048² ASTC 6x6 → DXT5 只用 **5 s**，输出 404,000 B（LZHAM 13.8×）。
+- **新增「RGBA 无损」输出**：`type_rgba`（32 位、不经块压缩）。2048² PNG 加 LZHAM 为 **1.65 s / 934,616 B**，
+  关闭垂直翻转时回读与源图**逐像素一致**；容器不压缩时 0.43 s / 22,369,992 B（对照 2048² → DXT1 为 1.34 s / 324,992 B）。
+- 桌面 CLI 同步新增 `-m audio2tsb`、`-m ttx2ttx`，并支持上述新图片格式。
+
+### 变更
+
+- **模式栏去重**：`PNG → TTX` 并入「图片 → TTX」，`WAV → TSB` 并入「音频 → TSB」；
+  Public 版只保留 **图片 → TTX / 音频 → TSB / TTX → TTX** 三个模式。
+- 与当前模式不匹配的文件不再报错中断，日志显示「跳过 …」。
+
+### 版本
+
+- 版本号统一到 **1.22**：Alpha `versionCode 12`、Public `versionCode 9`、桌面 1.22（桌面命名不区分 Alpha / Public）。
+
+### 验证
+
+- 手机端 1024² 三个图片（PNG / JPG / BMP）→ TTX：4.7 s，输出 `type_rgba` mips=11。
+- 音频 → TSB：回读采样与源 WAV 完全一致。
+
+---
+
 ## [1.21.6] - 2026-11-14
 
 ### 修复
