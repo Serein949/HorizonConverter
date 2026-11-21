@@ -23,6 +23,12 @@ public sealed class ObjExportOptions
     public string? SearchRoot;
     /// <summary>Force a livery sub folder instead of picking the best covering one.</summary>
     public string? LiveryFolder;
+    /// <summary>
+    /// Write the PNGs next to the OBJ (no sub folder) and name them
+    /// <c>&lt;material&gt;_basecolor.png</c>, <c>_normal.png</c> … so Substance Painter and
+    /// other texturing tools can match them to a texture set by name.
+    /// </summary>
+    public bool SubstanceMode;
     public Action<string>? Log;
 }
 
@@ -48,7 +54,9 @@ public static class ObjExporter
         string searchRoot = options.SearchRoot ?? directory;
         string baseName = Path.GetFileNameWithoutExtension(objPath);
         string mtlPath = Path.Combine(directory, baseName + ".mtl");
-        string textureFolder = Path.Combine(directory, baseName + "_textures");
+        string textureFolder = options.SubstanceMode
+            ? directory
+            : Path.Combine(directory, baseName + "_textures");
 
         // ---- resolve + convert textures -------------------------------------------------
         var textureFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -79,8 +87,10 @@ public static class ObjExporter
 
         if (options.ExportTextures)
         {
-            foreach (TmbMaterial material in scene.Materials)
+            for (int materialIndex = 0; materialIndex < scene.Materials.Count; materialIndex++)
             {
+                TmbMaterial material = scene.Materials[materialIndex];
+                string materialName = MaterialName(material, materialIndex);
                 foreach (string channel in channels)
                 {
                     TmbTextureRef? texture = material.Texture(channel);
@@ -89,7 +99,12 @@ public static class ObjExporter
                     (string? file, string kind) = ResolveDetailed(lookup, texture.Name, preferred);
                     if (file is null) continue;
                     textureLog.Add(texture.Name + "," + kind + "," + file);
-                    string png = Path.Combine(textureFolder, texture.Name + ".png");
+                    // Substance mode: one flat file per channel, named after the material, so the
+                    // texture set in the texturing tool can be matched by name.
+                    string fileName = options.SubstanceMode
+                        ? materialName + "_" + ChannelSuffix(channel) + ".png"
+                        : texture.Name + ".png";
+                    string png = Path.Combine(textureFolder, fileName);
                     try
                     {
                         Directory.CreateDirectory(textureFolder);
@@ -97,7 +112,9 @@ public static class ObjExporter
                         bool stale = !File.Exists(png) ||
                                      File.GetLastWriteTimeUtc(file) > File.GetLastWriteTimeUtc(png);
                         if (stale) TtxToPng(file, png);
-                        textureFiles[texture.Name] = Path.Combine(Path.GetFileName(textureFolder), texture.Name + ".png");
+                        textureFiles[texture.Name] = options.SubstanceMode
+                            ? fileName
+                            : Path.Combine(Path.GetFileName(textureFolder), fileName);
                         written++;
                     }
                     catch (Exception ex)
@@ -310,6 +327,19 @@ public static class ObjExporter
         if (pos < 0 || pos + 2 >= stride) pos = 0;
         return (pos, normal, uv);
     }
+
+    /// <summary>Aerofly channel name → the suffix texturing tools expect in a texture set.</summary>
+    private static string ChannelSuffix(string channel) => channel switch
+    {
+        "diffuse" => "basecolor",
+        "normal" => "normal",
+        "specular" => "specular",
+        "reflection" => "reflection",
+        "ambient" => "ambient",
+        "light" => "emissive",
+        "alpha" => "opacity",
+        _ => channel,
+    };
 
     private static string MaterialName(TmbMaterial? material, int index)
     {

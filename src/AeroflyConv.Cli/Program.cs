@@ -114,10 +114,14 @@ internal static class Program
                     options.ModelTextures = false;
                     break;
                 case "--livery":
-                options.ModelLivery = RequireArg(args, ref i, arg);
-                break;
-            case "--no-uv-flip":
+                    options.ModelLivery = RequireArg(args, ref i, arg);
+                    break;
+                case "--no-uv-flip":
                     options.ModelFlipV = false;
+                    break;
+                case "--sp":
+                case "--substance":
+                    options.ModelSubstance = true;
                     break;
                 case "--zoom":
                     options.TtcZoom = int.Parse(RequireArg(args, ref i, arg));
@@ -304,6 +308,8 @@ internal static class Program
                   --no-textures       tmb2obj: geometry only, skip texture conversion
                   --no-uv-flip        tmb2obj: keep UVs as stored (for models that look mirrored)
                   --livery <folder>   tmb2obj: use this livery sub folder for textures
+                  --sp, --substance   tmb2obj: flat textures next to the OBJ, named <material>_basecolor.png
+                                      (ready for Substance Painter texture sets)
                   --zoom <n>          TTC header "extra"/zoom (default: from map_N_ name)
                   --no-overwrite      skip files that already exist
                   --info              only print metadata
@@ -315,7 +321,7 @@ internal static class Program
               AeroflyConv livery.png -m png2ttx -f dxt_auto --flip
               AeroflyConv scenery.tmb -m tm2txt
               AeroflyConv a350_1000.tmb -m tmb2obj
-              (tmb2obj extras: --y-up, --no-textures, --no-uv-flip)
+              (tmb2obj extras: --y-up, --no-textures, --no-uv-flip, --livery, --sp)
               AeroflyConv "E:\SteamLibrary\...\aircraft" -d D:\extracted -j 16
             """);
     }

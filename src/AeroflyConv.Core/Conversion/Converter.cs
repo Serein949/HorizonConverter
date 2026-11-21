@@ -93,6 +93,9 @@ public sealed class ConvertOptions
     /// <summary>Force one livery sub folder when exporting a model.</summary>
     public string? ModelLivery { get; set; }
 
+    /// <summary>Model export: flat PNGs next to the OBJ, named &lt;material&gt;_basecolor.png (Substance Painter friendly).</summary>
+    public bool ModelSubstance { get; set; }
+
     /// <summary>Set by <see cref="Converter.ConvertAll"/> so folder conversions mirror their layout.</summary>
     public string? MirrorRoot { get; set; }
 
@@ -743,6 +746,7 @@ public static class Converter
             FlipV = options.ModelFlipV,
             YUp = options.ModelYUp,
             LiveryFolder = options.ModelLivery,
+            SubstanceMode = options.ModelSubstance,
             SearchRoot = Path.GetDirectoryName(Path.GetFullPath(input)),
             Log = log,
         };

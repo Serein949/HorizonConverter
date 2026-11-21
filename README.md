@@ -527,6 +527,32 @@ AeroflyConv a330.tmb --livery sa_air_china
 所以默认原样输出，用 Blender 的 `Forward: Y, Up: Z` 导入即可。加 `--y-up` 会转成 Y 轴向上。
 UV 默认不翻转（Aerofly 的模型 UV 已经是 OBJ 约定）；GUI 里的「Flip UV vertically」只给个别反着的模型用。
 
+### 导出给 Substance Painter（`--sp`）
+
+默认导出把贴图放进 `<模型名>_textures\` 子目录，MTL 里写相对路径。多数 DCC（Blender 等）
+能正确解析，但 **Substance Painter 不会自动把 MTL 里的贴图绑到材质槽**——它只读材质名与
+基础色，贴图需要手动拖入。为方便 SP 工作流，加 `--sp`（同 `--substance`），把贴图**平铺**到
+OBJ 同级目录并按「材质名 + 通道」命名：
+
+```powershell
+AeroflyConv a350_1000.tmb -m tmb2obj --sp
+```
+
+| 通道 | 文件名 |
+| --- | --- |
+| diffuse | `<材质>_basecolor.png` |
+| normal | `<材质>_normal.png` |
+| specular | `<材质>_specular.png` |
+| reflection | `<材质>_reflection.png` |
+| ambient | `<材质>_ambient.png` |
+| light | `<材质>_emissive.png` |
+
+MTL 里的路径随之变成裸文件名（`map_Kd ext05_basecolor.png`）。在 SP 里：
+
+1. `File → New Project`，网格选 `.obj`（保留同目录的 `.mtl` 和 PNG）；
+2. SP 会按材质拆分 Texture Set，但 `baseColor` / `normal` 等槽位是空的——把同名 PNG 一起拖进 Shelf 再拖到槽位即可（文件名带材质名，不会串台）；
+3. 想要贴图自动跟随，最稳的是走 Blender：`File → Import → Wavefront (.obj)`（Blender 能正确读 MTL），再从 Blender 导出 FBX 给 SP。
+
 ![TMB 转 OBJ 后在 Blender 里渲染](docs/model-obj.png)
 
 > 上面这张图是导出的 `a350_1000.obj` 在 Blender 4.5 里直接打开、只用两盏太阳光渲染的结果：
@@ -535,6 +561,12 @@ UV 默认不翻转（Aerofly 的模型 UV 已经是 OBJ 约定）；GUI 里的�
 ---
 
 ## 17. 版本记录
+
+### 1.23.3
+
+* **新增 `--sp` / `--substance`（Substance Painter 友好导出）**：贴图平铺到 OBJ 同级目录，按 `<材质>_basecolor.png` / `_normal.png` / `_specular.png` / `_reflection.png` / `_ambient.png` / `_emissive.png` 命名，MTL 写裸文件名；GUI 对应「Substance-friendly (flat textures)」勾选项。
+* 涂装选择确定化：多涂装目录覆盖率相同时按固定规则选取，日志打印 `textures: using <目录>/ for n/N names`。
+* README 增加「导出给 Substance Painter」一节，说明 SP 不自动读 MTL 贴图的限制与三条可选流程。
 
 ### 1.23.2
 

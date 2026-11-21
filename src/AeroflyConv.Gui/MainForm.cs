@@ -18,6 +18,7 @@ internal sealed class MainForm : Form
     private readonly GlassSelect _threadsSelect = new();
     private readonly CheckBox _flipCheck = new();
     private readonly CheckBox _yUpCheck = new();
+    private readonly CheckBox _spCheck = new();
     private readonly GlassSelect _qualitySelect = new();
     private Label? _qualityLabel;
     private readonly CheckBox _mipmapsCheck = new();
@@ -45,6 +46,7 @@ internal sealed class MainForm : Form
     private bool _flipRelevant;
     private bool _mipmapsRelevant;
     private bool _yUpRelevant;
+    private bool _spRelevant;
     private bool _compressRelevant;
 
     private static readonly (string Category, NavEntry[] Items)[] Modes =
@@ -310,8 +312,11 @@ internal sealed class MainForm : Form
         ConfigureCheck(_mipmapsCheck, "TTC mipmaps");
         ConfigureCheck(_compressCheck, "Compress TTX (LZHAM)");
         ConfigureCheck(_yUpCheck, "Y-up (Blender / glTF)");
+        ConfigureCheck(_spCheck, "Substance-friendly (flat textures)");
         _yUpCheck.Margin = new Padding(0, 0, 26, 0);
         _yUpCheck.Visible = false;
+        _spCheck.Margin = new Padding(0, 0, 8, 0);
+        _spCheck.Visible = false;
         _mipmapsCheck.Checked = true;
         _compressCheck.Checked = true;
         _flipCheck.Margin = new Padding(0, 0, 26, 0);
@@ -320,6 +325,7 @@ internal sealed class MainForm : Form
         row2.Controls.Add(_mipmapsCheck);
         row2.Controls.Add(_compressCheck);
         row2.Controls.Add(_yUpCheck);
+        row2.Controls.Add(_spCheck);
 
         var row3 = new FlowLayoutPanel
         {
@@ -583,6 +589,9 @@ internal sealed class MainForm : Form
         _yUpRelevant = mode == ConversionMode.TmbToObj;
         _yUpCheck.Visible = _yUpRelevant;
         _yUpCheck.Enabled = _yUpRelevant;
+        _spRelevant = mode == ConversionMode.TmbToObj;
+        _spCheck.Visible = _spRelevant;
+        _spCheck.Enabled = _spRelevant;
         _flipCheck.Enabled = _flipRelevant;
         _flipCheck.Checked = _flipRelevant && mode != ConversionMode.TmbToObj;
         _flipCheck.Text = mode == ConversionMode.TmbToObj
@@ -779,6 +788,7 @@ internal sealed class MainForm : Form
             ModelTextures = true,
             ModelFlipV = _flipCheck.Checked,
             ModelYUp = _yUpCheck.Checked,
+            ModelSubstance = _spCheck.Checked,
             AstcQuality = _qualitySelect.SelectedIndex switch
             {
                 0 => AeroflyConv.Core.Codecs.AstcQuality.Fast,
