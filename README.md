@@ -676,3 +676,22 @@ MTL 里的路径随之变成裸文件名（`map_Kd ext05_basecolor.png`）。在
 * **ASTC 编码**落地，手机端 PNG→TTX 可写 ASTC 6x6 / 5x5。
 * 桌面与手机版本号统一到 **1.21**；Alpha（`com.aeroflyconv.app`）与 Public
   （`com.aeroflyconv.converter`）可共存。
+
+---
+
+## 18. 第三方组件与许可
+
+本项目自己写的代码以 MIT 发布（见 `LICENSE`）。捆绑或参考的第三方组件如下，**发布/再分发时请连同
+`THIRD-PARTY-NOTICES.md` 与 `docs/licenses/` 一起带上**：
+
+| 组件 | 许可 | 说明 |
+| --- | --- | --- |
+| SixLabors.ImageSharp 3.1.5 | Six Labors Split License 1.0 | 开源/非商业免费；**商用需购买其商业许可**，或替换掉 |
+| NLayer 3.0.0 | MIT | MP3 解码 |
+| NVorbis 0.10.5 | MIT | OGG 解码 |
+| FlacBox 1.0.1 | 上游未附许可证文件 | 仅用于 FLAC 解码；商用前建议替换 |
+| LZHAM（C# 移植） | Public Domain | 原作 Rich Geldreich，无需署名 |
+| ARM astc-encoder（参考） | Apache-2.0 | ASTC 块头布局与量化表按其对齐 |
+| AeroflyFS-Native-Converter（参考） | MIT | 文件格式参考实现，© Rishi K |
+
+许可证全文在 `docs/licenses/` 下，说明与义务见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。
