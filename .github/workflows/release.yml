@@ -15,6 +15,7 @@ name: release
 on:
   push:
     tags: ['v*']
+    branches-ignore: ['**']   # branch pushes must never trigger a release
   workflow_dispatch:
     inputs:
       tag:
