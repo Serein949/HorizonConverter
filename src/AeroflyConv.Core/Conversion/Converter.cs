@@ -24,7 +24,6 @@ public enum ConversionMode
     TtxToTtx,
     TmbToObj,
     Auto,
-    XPlaneAircraft,
 }
 
 public sealed class ConvertOptions

@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Windows.Forms;
@@ -72,7 +72,7 @@ internal sealed class NavList : Control
     {
         float s = DeviceDpi / 96f;
         int h = 0;
-        foreach (NavEntry e in _entries) h += (int)((e.IsHeader ? 28 : 36) * s);
+        foreach (NavEntry e in _entries) h += (int)((e.IsHeader ? 22 : 31) * s);
         return h + 4;
     }
 
@@ -82,7 +82,7 @@ internal sealed class NavList : Control
         int y = 2;
         for (int i = 0; i < _entries.Count; i++)
         {
-            int h = (int)((_entries[i].IsHeader ? 28 : 36) * s);
+            int h = (int)((_entries[i].IsHeader ? 22 : 31) * s);
             if (!_entries[i].IsHeader && p.Y >= y && p.Y < y + h)
                 return (i, new Rectangle(0, y, Width, h));
             y += h;
@@ -134,7 +134,7 @@ internal sealed class NavList : Control
         for (int i = 0; i < _entries.Count; i++)
         {
             NavEntry entry = _entries[i];
-            int h = (int)((entry.IsHeader ? 28 : 36) * s);
+            int h = (int)((entry.IsHeader ? 22 : 31) * s);
             var row = new RectangleF(0, y, Width, h);
 
             if (entry.IsHeader)

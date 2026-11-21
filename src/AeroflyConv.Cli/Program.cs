@@ -12,10 +12,7 @@ internal static class Program
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-        if (args.Length > 0 && args[0] is "xplane" or "xp")
-            return XPlane.Run(args.AsSpan(1));
-
-        if (args.Any(a => a is "-v" or "--version" or "version"))
+        if (args.Length > 0 && args[0] is "-v" or "--version" or "version")
         {
             Console.WriteLine($"{ProductInfo.Name} / {ProductInfo.Banner}");
             Console.WriteLine("Aerofly FS TTX / TSB / TOC / TTC 转换器（纯 C# 实现）");

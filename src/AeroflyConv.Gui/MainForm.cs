@@ -49,9 +49,6 @@ internal sealed class MainForm : Form
 
     private static readonly (string Category, NavEntry[] Items)[] Modes =
     [
-        ("Aircraft", [
-            new NavEntry { Text = "X-Plane 12 \u2192 Aerofly FS 4", Mode = ConversionMode.XPlaneAircraft },
-        ]),
         ("Textures", [
             new NavEntry { Text = "TTX \u2192 PNG", Mode = ConversionMode.TtxToPng },
             new NavEntry { Text = "\u56fe\u7247 \u2192 TTX", Mode = ConversionMode.PngToTtx },
@@ -188,13 +185,12 @@ internal sealed class MainForm : Form
             g.DrawLine(line, sidebar.Width - 1, 0, sidebar.Width - 1, sidebar.Height);
         };
 
-        sidebar.Controls.Add(new BrandHeader { Dock = DockStyle.Top, Height = 104 });
-
         var navHost = new Panel
         {
-            Dock = DockStyle.Top,
+            Dock = DockStyle.Fill,
             BackColor = Color.FromArgb(255, Theme.Sidebar),
             Padding = new Padding(8, 0, 8, 0),
+            AutoScroll = true,
         };
         _nav.Dock = DockStyle.Top;
         _nav.SelectionChanged += (_, _) => UpdateModeUi();
@@ -202,18 +198,23 @@ internal sealed class MainForm : Form
         sidebar.Controls.Add(navHost);
         _navHost = navHost;
 
+        // Brand + tagline live in one bottom bar so the sidebar layout never depends on how many
+        // nav categories the mode list happens to contain.
+        var bottomBar = new Panel { Dock = DockStyle.Bottom, Height = 132, BackColor = Color.Transparent };
         var footer = new Label
         {
             Dock = DockStyle.Bottom,
-            Height = 56,
-            Text = "C# / .NET 10  \u00b7  managed LZHAM\nno Python, no runtime install",
+            Height = 42,
+            Text = "C# / .NET 10  \u00b7  LZHAM",
             Font = Theme.FontSmall,
             ForeColor = Theme.TextDim,
             TextAlign = ContentAlignment.MiddleLeft,
             Padding = new Padding(24, 0, 12, 8),
             BackColor = Color.Transparent,
         };
-        sidebar.Controls.Add(footer);
+        bottomBar.Controls.Add(footer);
+        bottomBar.Controls.Add(new BrandHeader { Dock = DockStyle.Top, Height = 90 });
+        sidebar.Controls.Add(bottomBar);
 
         return sidebar;
     }
@@ -504,7 +505,7 @@ internal sealed class MainForm : Form
             entries.AddRange(items);
         }
         _nav.SetEntries(entries);
-        if (_navHost is not null) _navHost.Height = _nav.MeasureHeight();
+        _nav.Height = _nav.MeasureHeight();
     }
 
     private static void ConfigureCheck(CheckBox box, string text)
@@ -543,8 +544,6 @@ internal sealed class MainForm : Form
 
         (string hint, string pageHint) = mode switch
         {
-            ConversionMode.XPlaneAircraft => ("点下面的「打开转换窗口」",
-                "X-Plane 12 机模 → Aerofly FS 4：模型、材质、可动部件、贴图一起生成，可直接装进 Aerofly"),
             ConversionMode.TtxToPng => ("Drag && drop .ttx textures here\nor use \"Add files\"",
                 "DXT1/3/5, BC5 normal maps, ETC2, raw RGBA and R8 textures to PNG"),
             ConversionMode.PngToTtx => ("Drag && drop PNG / JPG / BMP / PSD / TIFF images here",
@@ -569,13 +568,12 @@ internal sealed class MainForm : Form
         _hintLabel.Text = hint;
         _pageHint.Text = pageHint;
 
-        bool isAircraft = mode == ConversionMode.XPlaneAircraft;
-        if (_filesCard is not null) _filesCard.Visible = !isAircraft;
-        _browseButton.Visible = !isAircraft;
-        _clearButton.Visible = !isAircraft;
-        _openFolderButton.Visible = !isAircraft;
-        _convertButton.Text = isAircraft ? "打开转换窗口" : "Convert";
-        _convertButton.Width = isAircraft ? 160 : 130;
+        if (_filesCard is not null) _filesCard.Visible = true;
+        _browseButton.Visible = true;
+        _clearButton.Visible = true;
+        _openFolderButton.Visible = true;
+        _convertButton.Text = "Convert";
+        _convertButton.Width = 130;
 
         _flipRelevant = mode is ConversionMode.TtxToPng or ConversionMode.PngToTtx or
             ConversionMode.TtcToPng or ConversionMode.PngToTtc or ConversionMode.TtxToTtx or
@@ -757,12 +755,6 @@ internal sealed class MainForm : Form
     private async Task ConvertAsync()
     {
         if (_busy) return;
-        if (CurrentMode == ConversionMode.XPlaneAircraft)
-        {
-            using var wizard = new XPlaneForm();
-            wizard.ShowDialog(this);
-            return;
-        }
         if (_fileList.Items.Count == 0)
         {
             using var dialog = new FolderBrowserDialog { Description = "Select a folder to convert" };

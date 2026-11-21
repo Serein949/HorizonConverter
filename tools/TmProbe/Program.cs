@@ -23,8 +23,6 @@ internal static class Program
                 return GfxStats(args[1]);
             case "types" when args.Length > 1:
                 return TypeStats(args[1]);
-            case "obj" when args.Length > 1:
-                return ObjInfo(args[1]);
             case "patch" when args.Length > 1:
                 return PatchStats(args[1]);
             case "tt" when args.Length > 1:
@@ -267,36 +265,6 @@ internal static class Program
                 counts[node.Type] = counts.GetValueOrDefault(node.Type) + 1;
         foreach (var pair in counts.OrderByDescending(p => p.Value))
             Console.WriteLine($"{pair.Value,6}  {pair.Key}");
-        return 0;
-    }
-
-    private static int ObjInfo(string path)
-    {
-        AeroflyConv.Core.XPlane.Obj8File obj = AeroflyConv.Core.XPlane.Obj8File.ParseFile(path);
-        var (minX, minY, minZ, maxX, maxY, maxZ) = obj.Bounds();
-        Console.WriteLine($"{Path.GetFileName(path)}: {obj.Vertices.Count} verts, {obj.Indices.Count} indices, {obj.Runs.Count} runs, {obj.TriangleCount} tris");
-        Console.WriteLine($"  bounds X[{minX:0.###},{maxX:0.###}] Y[{minY:0.###},{maxY:0.###}] Z[{minZ:0.###},{maxZ:0.###}]");
-        Console.WriteLine($"  texture={obj.Texture} lit={obj.TextureLit} normal={obj.TextureNormal}");
-        Console.WriteLine($"  lights={obj.Lights.Count} unknown={obj.UnknownCommands.Count}");
-        foreach (string u in obj.UnknownCommands.Take(4)) Console.WriteLine($"   ? {u}");
-        var groups = obj.Runs.GroupBy(r => r.Anim.Key).OrderByDescending(g => g.Sum(r => r.IndexCount));
-        foreach (var g in groups)
-        {
-            int tris = g.Sum(r => r.IndexCount) / 3;
-            string[] refs = g.First().Anim.Datarefs;
-            string label = refs.Length == 0 ? "(static)" : string.Join(", ", refs);
-            int minIdx = int.MaxValue, maxIdx = -1;
-            foreach (var r in g)
-                for (int i = 0; i < r.IndexCount; i++)
-                {
-                    int idx = obj.Indices[r.IndexOffset + i];
-                    minIdx = Math.Min(minIdx, idx);
-                    maxIdx = Math.Max(maxIdx, idx);
-                }
-            Console.WriteLine($"  {tris,7} tris  {label}   idx[{minIdx},{maxIdx}]");
-            if (refs.Length > 0)
-                foreach (var c in g.First().Anim.Commands) Console.WriteLine($"           {c}");
-        }
         return 0;
     }
 

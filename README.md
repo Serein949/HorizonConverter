@@ -536,6 +536,11 @@ UV 默认不翻转（Aerofly 的模型 UV 已经是 OBJ 约定）；GUI 里的�
 
 ## 17. 版本记录
 
+### 1.23.2
+
+* **移除 X-Plane 12 → Aerofly FS 4 功能**：GUI 侧栏不再有 Aircraft 分组与转换向导，CLI 不再接受 `xplane` / `xp` 子命令。
+* 删除相关实现：`Core/Convert/XpModelConverter.cs`、`XpPipeline.cs`、`Core/XPlane/*`、`Aerofly/TtxExporter.cs`、`Aerofly/TmdBuilder.cs`、`Gui/XPlaneForm.cs`、`Cli/XPlane.cs`；`ConversionMode.XPlaneAircraft` 一并去掉。
+* 侧栏布局加固：品牌区与页脚固定成底部条，导航区自适应并可滚动，分类数量变化不会再压到品牌文字。
 ### 1.23.1
 
 * **修复多涂装贴图串味**：同名贴图改由「覆盖率最高的涂装文件夹」统一提供，新增 `--livery <文件夹>` 强制指定。
