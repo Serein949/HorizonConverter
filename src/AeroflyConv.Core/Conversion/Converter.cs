@@ -148,7 +148,8 @@ public static class Converter
             ".tsb" => ConversionMode.TsbToWav,
             ".wav" => ConversionMode.WavToTsb,
             ".mp3" or ".flac" or ".ogg" => ConversionMode.AudioToWav,
-            ".toc" or ".tsc" or ".wad" or ".tmb" or ".tsl" => ConversionMode.TmToTxt,
+            ".tmb" or ".tmo" => ConversionMode.TmbToObj,
+            ".toc" or ".tsc" or ".wad" or ".tsl" => ConversionMode.TmToTxt,
             ".zip" => ConversionMode.ZipToTme,
             ".tme" => ConversionMode.TmeToZip,
             _ when ImageIo.SupportedExtensions.Contains(ext) => ConversionMode.PngToTtx,
@@ -781,7 +782,12 @@ public static class Converter
                 TsbSound s = TsbFile.Parse(raw);
                 return $"{s.Format} {s.SampleRate:0} Hz {s.Channels}ch {s.Bits}-bit frames={s.Frames}";
             }
-            case ".toc" or ".tsc" or ".wad" or ".tmb" or ".tsl":
+            case ".tmb" or ".tmo":
+            {
+                TmbScene scene = TmbReader.FromNodes(TmTree.Parse(TmCompress.InflateFile(raw)));
+                return $"3D model {TmbReader.FormatStats(scene)}";
+            }
+            case ".toc" or ".tsc" or ".wad" or ".tsl":
             {
                 string text = TmTextDump.DumpText(raw, out int inflated, wrapFile: false);
                 return $"TM container {inflated:N0} bytes inflated, " +

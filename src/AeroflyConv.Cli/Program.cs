@@ -268,11 +268,13 @@ internal static class Program
 
             The mode is detected from the file extension unless -m is given:
               .ttx                      -> PNG
-              .png .jpg .bmp            -> TTX (texture)              .ttc                      -> PNG (scenery tile)
+              .png .jpg .bmp .psd ...   -> TTX (texture)
+              .ttc                      -> PNG (scenery tile)
+              .tmb                      -> OBJ (3D model + MTL + textures)
               .tsb                      -> WAV
               .wav                      -> TSB
               .mp3 .flac .ogg           -> WAV
-              .toc .tsc .wad .tmb .tsl  -> TXT (generic TM dump)
+              .toc .tsc .wad .tsl       -> TXT (generic TM dump)
               .zip                      -> TME
               .tme                      -> ZIP
 
@@ -298,6 +300,9 @@ internal static class Program
                   --size <n>          force the output texture size (power of two, e.g. 4096)
                   --no-fit            do not match the size/format of an existing .ttx
                   --astc-quality <q>  ASTC encoding: fast | standard (default) | high
+                  --y-up              tmb2obj: convert Z-up source to Y-up (Blender/glTF)
+                  --no-textures       tmb2obj: geometry only, skip texture conversion
+                  --no-uv-flip        tmb2obj: keep UVs as stored (for models that look mirrored)
                   --zoom <n>          TTC header "extra"/zoom (default: from map_N_ name)
                   --no-overwrite      skip files that already exist
                   --info              only print metadata

@@ -459,11 +459,14 @@ Aerofly 的模型文件是 `.tmb`（和贴图一样的 LZHAM 容器，里面是 
 桌面版可以把任意 `.tmb` —— 飞机、机场、地景物件 —— 直接转成 **OBJ + MTL + PNG 贴图**，
 用 Blender / 3ds Max / Maya / SketchUp 打开继续编辑。
 
+`.tmb` 已加入自动识别：直接写文件名就会转成 OBJ，下面的 `-m tmb2obj` 只是显式写法。
+
 ```powershell
-AeroflyConv a350_1000.tmb -m tmb2obj
+AeroflyConv a350_1000.tmb
 AeroflyConv "E:\SteamLibrary\steamapps\common\Aerofly FS 4 Flight Simulator\aircraft\a350_1000" -m tmb2obj -d D:\models -j 8
 AeroflyConv a320.tmb -m tmb2obj --y-up          # Blender / glTF 习惯的 Y 轴向上
 AeroflyConv a320.tmb -m tmb2obj --no-textures   # 只要几何，不导出贴图
+AeroflyConv a350_1000.tmb --info                # 只看统计：部件 / 三角面 / 材质 / 顶点
 ```
 
 GUI 里对应侧栏 **3D → TMB → 模型 (OBJ)**。
