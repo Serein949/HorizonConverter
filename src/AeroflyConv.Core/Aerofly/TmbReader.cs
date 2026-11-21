@@ -117,6 +117,20 @@ public static class TmbReader
             VertexSize = (int)UInt32(Child(node, "vf_size")),
         };
 
+        TmNode? attribSize = Child(node, "vertex_attrib_size");
+        if (attribSize is not null)
+        {
+            uint[] sizes = UInt32s(attribSize.Payload);
+            if (sizes.Length > 0) patch.AttribSize = sizes.Select(x => (int)x).ToArray();
+        }
+
+        TmNode? attribOffset = Child(node, "vertex_attrib_offset");
+        if (attribOffset is not null)
+        {
+            int[] offsets = Int32s(attribOffset.Payload);
+            if (offsets.Length > 0) patch.AttribOffset = offsets;
+        }
+
         TmNode? vertices = Child(node, "vertices");
         if (vertices is null) return null;
         patch.Vertices = Floats(vertices.Payload);

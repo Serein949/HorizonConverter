@@ -21,6 +21,8 @@ public sealed class ObjExportOptions
     public bool WriteReport = true;
     /// <summary>Folder used to resolve texture names; defaults to the .tmb folder.</summary>
     public string? SearchRoot;
+    /// <summary>Force a livery sub folder instead of picking the best covering one.</summary>
+    public string? LiveryFolder;
     public Action<string>? Log;
 }
 
@@ -53,7 +55,27 @@ public static class ObjExporter
         var missing = new List<string>();
         int written = 0;
         var lookup = BuildTextureIndex(searchRoot, AncestorRoots(searchRoot));
+        var textureLog = new List<string>();
         var channels = new[] { "diffuse", "normal", "specular", "reflection", "ambient", "light", "alpha" };
+
+        // Several liveries can sit side by side under the model folder and they all ship the
+        // same texture names (fuselage1_color ...). Pick the one folder that covers the most
+        // requested names, so a model never ends up wearing two different liveries.
+        var requested = new List<string>();
+        foreach (TmbMaterial material in scene.Materials)
+            foreach (string channel in channels)
+            {
+                TmbTextureRef? texture = material.Texture(channel);
+                if (texture is null || texture.Name.Length == 0) continue;
+                if (!requested.Contains(texture.Name, StringComparer.OrdinalIgnoreCase)) requested.Add(texture.Name);
+            }
+
+        string preferred = options.LiveryFolder is { Length: > 0 } forced
+            ? forced.TrimEnd('\\', '/')
+            : lookup.ChooseRoot(searchRoot, requested, out _);
+        lookup.ChooseRoot(searchRoot, requested, out int covered);
+        if (preferred.Length > 0)
+            options.Log?.Invoke($"textures: using {preferred}/ for {covered}/{requested.Count} names");
 
         if (options.ExportTextures)
         {
@@ -64,13 +86,17 @@ public static class ObjExporter
                     TmbTextureRef? texture = material.Texture(channel);
                     if (texture is null || texture.Name.Length == 0) continue;
                     if (textureFiles.ContainsKey(texture.Name)) continue;
-                    string? file = Resolve(lookup, texture.Name);
+                    (string? file, string kind) = ResolveDetailed(lookup, texture.Name, preferred);
                     if (file is null) continue;
+                    textureLog.Add(texture.Name + "," + kind + "," + file);
                     string png = Path.Combine(textureFolder, texture.Name + ".png");
                     try
                     {
                         Directory.CreateDirectory(textureFolder);
-                        if (!File.Exists(png)) TtxToPng(file, png);
+                        // A stale png from an earlier run (old lookup rules) must not be reused.
+                        bool stale = !File.Exists(png) ||
+                                     File.GetLastWriteTimeUtc(file) > File.GetLastWriteTimeUtc(png);
+                        if (stale) TtxToPng(file, png);
                         textureFiles[texture.Name] = Path.Combine(Path.GetFileName(textureFolder), texture.Name + ".png");
                         written++;
                     }
@@ -118,6 +144,13 @@ public static class ObjExporter
         }
         File.WriteAllText(mtlPath, mtl.ToString(), new UTF8Encoding(false));
 
+        if (options.WriteReport)
+        {
+            var log = new StringBuilder("texture,match,source\n");
+            foreach (string line in textureLog) log.AppendLine(line);
+            File.WriteAllText(Path.Combine(directory, baseName + "-textures.csv"), log.ToString(), new UTF8Encoding(false));
+        }
+
         // ---- OBJ ------------------------------------------------------------------------
         var obj = new StringBuilder(1 << 20);
         obj.AppendLine("# Aerofly Converter - Wavefront OBJ");
@@ -160,6 +193,7 @@ public static class ObjExporter
                 for (int v = 0; v < vertexCount; v++)
                 {
                     int b = v * patch.VertexSize;
+                    if (b + patch.VertexSize > patch.Vertices.Length) break;
                     double x = patch.Vertices[b + posOffset];
                     double y = patch.Vertices[b + posOffset + 1];
                     double z = patch.Vertices[b + posOffset + 2];
@@ -250,10 +284,31 @@ public static class ObjExporter
             mtl.AppendLine(Inv, $"# {keyword} {texture.Name}.ttx (not converted)");
     }
 
+    /// <summary>
+    /// Reads the vertex layout from the patch itself (vertex_attrib_size / vertex_attrib_offset):
+    /// slot 0 is the position, the next 3-float slot the normal, the 2-float slot the UV.
+    /// Anything that would not fit inside the stride is ignored, so odd models cannot crash us.
+    /// </summary>
     private static (int Pos, int Normal, int Uv) AttributeOffsets(TmbPatch patch)
     {
-        // Shipped patches carry vertex_attrib_size/offset lists; fall back to pos3/normal3/uv2.
-        return (0, 3, 6);
+        int stride = patch.VertexSize > 0 ? patch.VertexSize : 8;
+        int[] sizes = patch.AttribSize;
+        int[] offsets = patch.AttribOffset;
+
+        int pos = -1, normal = -1, uv = -1;
+        for (int i = 0; i < offsets.Length && i < sizes.Length; i++)
+        {
+            int offset = offsets[i];
+            int size = sizes[i];
+            if (offset < 0 || size <= 0) continue;
+            if (offset + size > stride) continue;
+            if (size == 3 && pos < 0) { pos = offset; continue; }
+            if (size == 3 && normal < 0) { normal = offset; continue; }
+            if (size == 2 && uv < 0) uv = offset;
+        }
+
+        if (pos < 0 || pos + 2 >= stride) pos = 0;
+        return (pos, normal, uv);
     }
 
     private static string MaterialName(TmbMaterial? material, int index)
@@ -337,8 +392,6 @@ public static class ObjExporter
             if (!Directory.Exists(folder)) continue;
             int baseRank = (level + 1) * 10;
             index.AddFolderShallow(folder, baseRank);
-            foreach (string child in Directory.EnumerateDirectories(folder))
-                index.AddFolderShallow(child, baseRank + 1);
         }
         return index;
     }
@@ -386,14 +439,77 @@ public static class ObjExporter
             _rank[file] = rank;
         }
 
-        public string? Exact(string name)
+        /// <summary>Texture folder (first path segment below the model folder) of a file.</summary>
+        private readonly Dictionary<string, string> _root = new(StringComparer.OrdinalIgnoreCase);
+        private string _searchRoot = "";
+
+        public void SetSearchRoot(string root) => _searchRoot = Path.GetFullPath(root).TrimEnd('\\', '/');
+
+        public string RootOf(string file)
+        {
+            if (_root.TryGetValue(file, out string? cached)) return cached;
+            string full = Path.GetFullPath(file);
+            string root = _searchRoot;
+            string result = "";
+            if (root.Length > 0 && full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                string rel = full[(root.Length + 1)..];
+                int slash = rel.IndexOfAny(['\\', '/']);
+                if (slash > 0) result = rel[..slash];
+            }
+            _root[file] = result;
+            return result;
+        }
+
+        /// <summary>Picks the livery folder that supplies the most requested texture names.</summary>
+        public string ChooseRoot(string searchRoot, IReadOnlyList<string> names, out int covered)
+        {
+            SetSearchRoot(searchRoot);
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (string name in names)
+            {
+                if (!_byName.TryGetValue(name, out List<string>? list)) continue;
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string file in list)
+                {
+                    string folder = RootOf(file);
+                    if (seen.Add(folder)) counts[folder] = counts.GetValueOrDefault(folder) + 1;
+                }
+            }
+
+            string best = "";
+            covered = 0;
+            foreach (var pair in counts)
+            {
+                if (pair.Value > covered || (pair.Value == covered && string.CompareOrdinal(pair.Key, best) < 0))
+                {
+                    best = pair.Key;
+                    covered = pair.Value;
+                }
+            }
+            return best;
+        }
+
+        public string? Exact(string name, string preferred)
         {
             if (!_byName.TryGetValue(name, out List<string>? list) || list.Count == 0) return null;
+            if (preferred.Length > 0)
+            {
+                string? inRoot = null;
+                foreach (string file in list)
+                {
+                    if (!RootOf(file).Equals(preferred, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (inRoot is null || _rank[file] < _rank[inRoot] ||
+                        (_rank[file] == _rank[inRoot] && file.Length < inRoot.Length)) inRoot = file;
+                }
+                if (inRoot is not null) return inRoot;
+                return null;
+            }
             return Best(list);
         }
 
         /// <summary>All entries that end (or start) with the requested name, best first.</summary>
-        public IEnumerable<string> Search(string name, bool suffix)
+        public IEnumerable<string> Search(string name, bool suffix, string preferred)
         {
             var hits = new List<string>();
             foreach (var pair in _byName)
@@ -401,7 +517,10 @@ public static class ObjExporter
                 bool match = suffix
                     ? pair.Key.EndsWith(name, StringComparison.OrdinalIgnoreCase) && !pair.Key.Equals(name, StringComparison.OrdinalIgnoreCase)
                     : pair.Key.StartsWith(name, StringComparison.OrdinalIgnoreCase) && !pair.Key.Equals(name, StringComparison.OrdinalIgnoreCase);
-                if (match) hits.AddRange(pair.Value);
+                if (!match) continue;
+                foreach (string file in pair.Value)
+                    if (preferred.Length == 0 || RootOf(file).Equals(preferred, StringComparison.OrdinalIgnoreCase))
+                        hits.Add(file);
             }
             hits.Sort((a, b) =>
             {
@@ -428,12 +547,19 @@ public static class ObjExporter
     /// prefix match (livery folders rename the prefix, e.g. "ext01_fuselage_color" →
     /// "sa_air_china_ext01_fuselage_color").
     /// </summary>
-    private static string? Resolve(TextureIndex index, string name)
+    private static (string? Path, string Kind) ResolveDetailed(TextureIndex index, string name, string preferred)
     {
-        string? exact = index.Exact(name);
-        if (exact is not null) return exact;
-        foreach (string file in index.Search(name, suffix: true)) return file;
-        foreach (string file in index.Search(name, suffix: false)) return file;
+        string? exact = index.Exact(name, preferred);
+        if (exact is not null) return (exact, preferred.Length > 0 ? "exact+livery" : "exact");
+        foreach (string file in index.Search(name, suffix: true, preferred)) return (file, "suffix");
+        foreach (string file in index.Search(name, suffix: false, preferred)) return (file, "prefix");
+
+        // Nothing under the chosen livery root: fall back to any folder.
+        if (preferred.Length > 0)
+        {
+            string? any = index.Exact(name, "");
+            if (any is not null) return (any, "exact-other");
+        }
 
         // Last resort: the longest suffix of the requested name that exists (handles prefixes
         // added by livery packages).
@@ -441,9 +567,9 @@ public static class ObjExporter
         for (int skip = 1; skip < parts.Length; skip++)
         {
             string candidate = string.Join('_', parts.Skip(skip));
-            string? file = index.Exact(candidate);
-            if (file is not null) return file;
+            string? file = index.Exact(candidate, preferred);
+            if (file is not null) return (file, "trimmed");
         }
-        return null;
+        return (null, "missing");
     }
 }

@@ -30,12 +30,16 @@ public sealed class TmbPatch
     /// <summary>Number of triangles.</summary>
     public int NumFaces;
     public int MaterialId;
-    /// <summary>Interleaved vertex data: position (3), normal (3), uv (2).</summary>
+    /// <summary>Interleaved vertex data; the layout is given by AttribSize / AttribOffset.</summary>
     public float[] Vertices = [];
     /// <summary>Triangle list: three indices per face.</summary>
     public uint[] Indices = [];
-    /// <summary>Vertex float stride; the exporter always writes 8.</summary>
+    /// <summary>Vertex float stride (vf_size).</summary>
     public int VertexSize = 8;
+    /// <summary>Component count of each vertex attribute slot, as stored in the file.</summary>
+    public int[] AttribSize = [3, 3, 0, 0, 2, 0, 0, 0];
+    /// <summary>Float offset of each attribute inside the vertex, -1 when the slot is unused.</summary>
+    public int[] AttribOffset = [0, 3, -1, -1, 6, -1, -1, -1];
 }
 
 /// <summary>A drawable object: one transform, one collision mesh, one or more patches.</summary>

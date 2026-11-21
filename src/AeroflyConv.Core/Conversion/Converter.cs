@@ -91,6 +91,8 @@ public sealed class ConvertOptions
 
     /// <summary>Model export: flip the V texture coordinate (TTX rows are bottom-up).</summary>
     public bool ModelFlipV { get; set; }
+    /// <summary>Force one livery sub folder when exporting a model.</summary>
+    public string? ModelLivery { get; set; }
 
     /// <summary>Set by <see cref="Converter.ConvertAll"/> so folder conversions mirror their layout.</summary>
     public string? MirrorRoot { get; set; }
@@ -741,6 +743,7 @@ public static class Converter
             ExportTextures = options.ModelTextures,
             FlipV = options.ModelFlipV,
             YUp = options.ModelYUp,
+            LiveryFolder = options.ModelLivery,
             SearchRoot = Path.GetDirectoryName(Path.GetFullPath(input)),
             Log = log,
         };

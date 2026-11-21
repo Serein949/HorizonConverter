@@ -13,7 +13,7 @@ public static class ProductInfo
     public const string Edition = "Alpha";
 
     /// <summary>Numeric version (also stamped into the assemblies).</summary>
-    public const string Version = "1.23";
+    public const string Version = "1.23.1";
 
     /// <summary>"Aerofly 转换器 Alpha" - phone build label.</summary>
     public const string FullName = Name + " " + Edition;

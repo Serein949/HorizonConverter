@@ -116,7 +116,10 @@ internal static class Program
                 case "--no-textures":
                     options.ModelTextures = false;
                     break;
-                case "--no-uv-flip":
+                case "--livery":
+                options.ModelLivery = RequireArg(args, ref i, arg);
+                break;
+            case "--no-uv-flip":
                     options.ModelFlipV = false;
                     break;
                 case "--zoom":
@@ -303,6 +306,7 @@ internal static class Program
                   --y-up              tmb2obj: convert Z-up source to Y-up (Blender/glTF)
                   --no-textures       tmb2obj: geometry only, skip texture conversion
                   --no-uv-flip        tmb2obj: keep UVs as stored (for models that look mirrored)
+                  --livery <folder>   tmb2obj: use this livery sub folder for textures
                   --zoom <n>          TTC header "extra"/zoom (default: from map_N_ name)
                   --no-overwrite      skip files that already exist
                   --info              only print metadata

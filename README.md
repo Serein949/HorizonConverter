@@ -479,6 +479,7 @@ GUI 里对应侧栏 **3D → TMB → 模型 (OBJ)**。
 | `<名字>.mtl` | 每种材质一条，`map_Kd` / `map_Bump` / `map_Ks` / `map_Ke` |
 | `<名字>_textures/*.png` | 材质引用的 TTX 自动解码成 PNG（color / normal / specular / reflection / ambient） |
 | `<名字>-parts.csv` | 部件清单：部件名、材质名、三角面数、用到的贴图 |
+| `<名字>-textures.csv` | 贴图对账表：贴图名、匹配方式（`exact`/`exact+livery`/`suffix`/…）、实际文件 |
 
 ### 部件名称
 
@@ -504,6 +505,22 @@ WingL  WingR  StabilizerVertical  StabilizerHorizontalL  StrobeRear  NoseGearPar
 前缀匹配 → 去掉前缀后的后缀匹配。找不到的贴图会在 MTL 里写成注释
 `# map_Kd xxx.ttx (not converted)`，并在日志里给出 `N textures not found`。
 
+**多套涂装只取一套。** 模型目录下常有 `base\`、`b-18311\`、`sa_air_china\` 这样的涂装子目录，
+它们带的贴图**名字完全一样**（`fuselage1_color.ttx` 等）。程序会先统计每个子目录能覆盖
+多少个被引用的贴图名，选覆盖率最高的那一个作为整套贴图来源，日志打印
+`textures: using sa_air_china/ for 42/52 names`，这样机身与机翼不会来自两套涂装。
+要指定涂装就加 `--livery <文件夹名>`：
+
+```powershell
+AeroflyConv a330.tmb --livery sa_air_china
+```
+
+导出的 `<名字>-textures.csv` 会逐条列出「哪张贴图来自哪个文件、用哪种方式匹配」，
+出现可疑贴图时先看这张表。
+
+贴图转换会比对源 `.ttx` 与已生成 PNG 的修改时间，源文件更新就重新转换，
+不会复用上一次导出的旧图。
+
 ### 坐标与朝向
 
 源数据是 **Z 轴向上、X 轴前后**（A350 包围盒 X 73.9 / Y 64.6 / Z 17.2，正好是机长 / 翼展 / 机高），
@@ -518,6 +535,13 @@ UV 默认不翻转（Aerofly 的模型 UV 已经是 OBJ 约定）；GUI 里的�
 ---
 
 ## 17. 版本记录
+
+### 1.23.1
+
+* **修复多涂装贴图串味**：同名贴图改由「覆盖率最高的涂装文件夹」统一提供，新增 `--livery <文件夹>` 强制指定。
+* **修复旧 PNG 复用**：源 TTX 比 PNG 新就重新转换，不再沿用早期规则生成的图。
+* **修复顶点布局解析**：按 patch 的 `vertex_attrib_size` / `vertex_attrib_offset` 读取，`a330.tmb` 等模型不再数组越界。
+* 新增 `<模型>-textures.csv` 对账表（贴图名 / 匹配方式 / 实际文件）。
 
 ### 1.23
 
