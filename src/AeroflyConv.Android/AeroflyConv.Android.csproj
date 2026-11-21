@@ -20,6 +20,9 @@
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
+  <!-- Release signing: keys/signing.local.props is machine-local and gitignored. -->
+  <Import Project="..\..\keys\signing.local.props" Condition="Exists('..\..\keys\signing.local.props')" />
+
   <ItemGroup>
     <ProjectReference Include="..\AeroflyConv.Core\AeroflyConv.Core.csproj" />
   </ItemGroup>

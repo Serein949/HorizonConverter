@@ -11,3 +11,7 @@ tests/vectors/_verify_tmp/
 docs/shot_trace.txt
 tmp/
 *_preview_*.png
+keys/
+*.keystore
+*.jks
+*.pfx
