@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$subject = "CN=AeroflyConv Local Publishing"
+$subject = "CN=Horizon Converter Local Publishing"
 
 $root = Split-Path -Parent $PSScriptRoot
 $targets = if ($Paths) {
@@ -16,14 +16,14 @@ $targets = if ($Paths) {
 } else {
     $dist = Join-Path $root "dist"
     if (Test-Path $dist) {
-        Get-ChildItem $dist -Recurse -Filter "AeroflyConv.exe" | ForEach-Object { $_.FullName }
+        Get-ChildItem $dist -Recurse -Filter "HorizonConverter.exe" | ForEach-Object { $_.FullName }
     } else {
-        Get-ChildItem $PSScriptRoot -Recurse -Filter "AeroflyConv.exe" | ForEach-Object { $_.FullName }
+        Get-ChildItem $PSScriptRoot -Recurse -Filter "HorizonConverter.exe" | ForEach-Object { $_.FullName }
     }
 }
 
 if (-not $targets) {
-    Write-Host "No AeroflyConv.exe found to sign."
+    Write-Host "No HorizonConverter.exe found to sign."
     exit 1
 }
 
