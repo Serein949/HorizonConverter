@@ -871,7 +871,9 @@ public class MainActivity : Activity
                 }
 
                 string produced = outcome.Output;
-                string name = Path.GetFileName(produced);
+                // Keep the original name: only the extension changes, so a texture exported
+                // as "f14_livery.png" comes back as "f14_livery.ttx" (never ".converted" or " (1)").
+                string name = Path.GetFileNameWithoutExtension(file.DisplayName) + Path.GetExtension(produced);
                 try
                 {
                     (string where, Uri? uri) = Publish(produced, name);
@@ -915,6 +917,7 @@ public class MainActivity : Activity
             {
                 string parentId = DocumentsContract.GetTreeDocumentId(_outputTree)!;
                 Uri parent = DocumentsContract.BuildDocumentUriUsingTree(_outputTree, parentId);
+                DeleteExistingInTree(parentId, displayName);
                 Uri? created = DocumentsContract.CreateDocument(ContentResolver!, parent, mime, displayName);
                 if (created is not null)
                 {
@@ -941,6 +944,7 @@ public class MainActivity : Activity
             values.Put(MediaStore.IMediaColumns.RelativePath, "Download/AeroflyConv");
 
             Uri? collection = MediaStore.Downloads.GetContentUri(MediaStore.VolumeExternalPrimary);
+            DeleteExistingInMediaStore(collection!, displayName);
             Uri? target = ContentResolver?.Insert(collection!, values);
             if (target is not null)
             {
@@ -957,6 +961,56 @@ public class MainActivity : Activity
         string dest = Path.Combine(OutputDirectory(), displayName);
         File.Copy(localPath, dest, overwrite: true);
         return (dest, null);
+    }
+
+    /// <summary>Removes a previously published file with the same name inside the chosen folder.</summary>
+    private void DeleteExistingInTree(string parentId, string displayName)
+    {
+        try
+        {
+            Uri children = DocumentsContract.BuildChildDocumentsUriUsingTree(_outputTree!, parentId);
+            string[] projection =
+            [
+                DocumentsContract.Document.ColumnDocumentId,
+                DocumentsContract.Document.ColumnDisplayName,
+            ];
+            using ICursor? cursor = ContentResolver?.Query(children, projection, null, null, null);
+            while (cursor is not null && cursor.MoveToNext())
+            {
+                if (!string.Equals(cursor.GetString(1), displayName, StringComparison.OrdinalIgnoreCase)) continue;
+                string? childId = cursor.GetString(0);
+                if (childId is null) continue;
+                Uri child = DocumentsContract.BuildDocumentUriUsingTree(_outputTree!, childId);
+                DocumentsContract.DeleteDocument(ContentResolver!, child);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("覆盖同名文件失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>Removes a previously published file with the same name from Download/AeroflyConv.</summary>
+    private void DeleteExistingInMediaStore(Uri collection, string displayName)
+    {
+        try
+        {
+            string[] projection = ["_id"];            string selection = MediaStore.IMediaColumns.DisplayName + "=? AND "
+                               + MediaStore.IMediaColumns.RelativePath + "=?";
+            string[] arguments = [displayName, "Download/AeroflyConv/"];
+            var victims = new List<Uri>();
+            using (ICursor? cursor = ContentResolver?.Query(collection, projection, selection, arguments, null))
+            {
+                while (cursor is not null && cursor.MoveToNext())
+                    victims.Add(ContentUris.WithAppendedId(collection, cursor.GetLong(0)));
+            }
+            foreach (Uri victim in victims) ContentResolver?.Delete(victim, null, null);
+        }
+        catch (Exception ex)
+        {
+            Log("覆盖同名文件失败：" + ex.Message);
+        }
     }
 
     private static string MimeFor(string name) => Path.GetExtension(name).ToLowerInvariant() switch

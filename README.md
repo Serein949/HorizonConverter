@@ -562,6 +562,12 @@ MTL 里的路径随之变成裸文件名（`map_Kd ext05_basecolor.png`）。在
 
 ## 17. 版本记录
 
+### 1.23.4（手机端）
+
+* **转换后保持原文件名**：输出文件名 = 输入主名 + 新扩展名，不再出现 `.converted` 或 ` (1)` 后缀；写入前会先删除同级同名旧文件（在 SAF 目录与 `Download/AeroflyConv` 两处都做了处理）。换涂装时文件名必须与原文件一致，这条很重要。
+* Alpha `versionCode 13`、Public `versionCode 10`，`versionName` 均为 1.23.4。
+* 本次无实机可用，两个 APK 仅通过编译与 `aapt2 dump badging` 校验。
+
 ### 1.23.3
 
 * **新增 `--sp` / `--substance`（Substance Painter 友好导出）**：贴图平铺到 OBJ 同级目录，按 `<材质>_basecolor.png` / `_normal.png` / `_specular.png` / `_reflection.png` / `_ambient.png` / `_emissive.png` 命名，MTL 写裸文件名；GUI 对应「Substance-friendly (flat textures)」勾选项。
