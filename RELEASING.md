@@ -44,6 +44,18 @@ Add a `### 1.1` entry to the changelog in `README.md`.
 
 ## 2. Build the artifacts
 
+The whole of §2 and §3 is wrapped in one script:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\release.ps1
+```
+
+It reads the version from `ProductInfo.cs`, builds and signs the desktop executables, builds the APK
+(with the release keystore when `keys/signing.local.props` exists), and writes `dist/v<version>/`
+with a `SHA256SUMS.txt`. Use `-SkipAndroid`, `-NoSign` or `-Version 1.1` for partial runs.
+
+Doing it by hand:
+
 ```powershell
 # desktop (single file, compressed, self-contained)
 dotnet publish src\AeroflyConv.Cli\AeroflyConv.Cli.csproj -c Release -r win-x64 `
@@ -114,7 +126,8 @@ gh release create v1.1 \
 ### Expect two warnings, and say so in the release notes
 
 * **Windows SmartScreen**: the exe is signed with a self-signed certificate, so users see
-  "Windows protected your PC" → *More info* → *Run anyway*. Only a paid OV/EV certificate removes this.
+  "Windows protected your PC" → *More info* → *Run anyway*. Only a certificate that SmartScreen
+  already trusts removes this — see §8 for the two affordable ways to get one.
 * **Android Play Protect**: sideloaded APKs trigger "unknown app" prompts; the APK is not from Play,
   so users must allow installs from the source they downloaded it from.
 
@@ -136,3 +149,49 @@ Include the checksums in the release text so people can verify the download befo
 * Never attach game `.ttx` / `.tmb` / `.tsb` / `.ttc` samples, and never publish `.afsenc` tooling.
 * If someone reports a licence problem with a dependency, the fix is a code change, not a silent
   removal — record it in `THIRD-PARTY-NOTICES.md`.
+
+## 7. Releasing from CI
+
+Two workflows are included:
+
+| Workflow | Trigger | Does |
+| --- | --- | --- |
+| `.github/workflows/build.yml` | push / PR | builds desktop + APK, uploads unsigned artifacts (sanity check only) |
+| `.github/workflows/release.yml` | tag `v*` | publishes CLI/GUI, builds the signed APK, writes `SHA256SUMS.txt`, creates a **draft** release |
+
+To make CI sign the APK, add four repository secrets (Settings → Secrets and variables → Actions):
+
+```
+KEYSTORE_BASE64     base64 of keys/horizon-release.keystore
+KEYSTORE_PASSWORD   the store password
+KEY_ALIAS           horizon
+KEY_PASSWORD        the key password
+```
+
+Print the base64 on Windows with:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("keys\horizon-release.keystore")) | Set-Clipboard
+```
+
+Then `git tag v1.0 && git push origin v1.0` produces a draft release with the four assets attached.
+Review it, edit the notes, publish.
+
+## 8. Getting rid of the SmartScreen warning
+
+A self-signed certificate cannot remove it. The realistic options, cheapest first:
+
+| Option | Cost | Effect | Requirements |
+| --- | --- | --- | --- |
+| **SignPath Foundation** | free for OSS | EV-level signature, warning gone immediately | public repo, OSI-approved licence, a CI that builds the artifact; apply at signpath.org, review takes weeks |
+| **Azure Trusted Signing** | ~10 USD/month | warning gone | Microsoft account with 3+ years of verifiable identity/business history; cloud signing, no USB token |
+| **OV certificate** | ~100–200 USD/year | warning fades as reputation builds (weeks–months) | registered business, hardware token |
+| **EV certificate** | ~300–500 USD/year | warning gone immediately | registered business, hardware token |
+
+`signpath/artifact-configuration.xml` is a starting point for the SignPath application; when the
+project is accepted, uncomment the "Sign executables" step in `release.yml` and add
+`SIGNPATH_API_TOKEN` / `SIGNPATH_ORGANIZATION_ID` as secrets.
+
+Note that SmartScreen reputation is per file hash: re-signing an existing file resets it, unsigned
+files can still become "trusted" after enough clean downloads, and downloading via tools that do not
+set the Mark-of-the-Web skips the check entirely (that is why some GitHub projects "never warn").

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath Foundation (free code signing for open-source projects)
+  https://signpath.org / https://app.signpath.io
+
+  This file is a starting point for the "artifact configuration" you upload when
+  applying. It signs the two Windows executables that our release workflow builds:
+
+      out/assets/HorizonConverter-<version>-win-cli.exe
+      out/assets/HorizonConverter-<version>-win-gui.exe
+
+  If SignPath accepts it as-is, the only change needed in
+  .github/workflows/release.yml is to uncomment the "Sign executables" step and
+  set the SIGNPATH_* secrets. Otherwise adjust the <path> patterns to the layout
+  SignPath shows in its preview.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file-set>
+      <include>
+        <path>*.exe</path>
+      </include>
+      <for-each>
+        <authenticode-sign
+            description="Horizon Converter"
+            url="https://github.com/">
+          <file-path>${artifact}</file-path>
+        </authenticode-sign>
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

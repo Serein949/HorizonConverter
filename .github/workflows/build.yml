@@ -1,0 +1,64 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    name: Desktop (CLI + GUI)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build AeroflyConv.slnx -c Release
+
+      - name: Publish CLI
+        run: >
+          dotnet publish src/AeroflyConv.Cli/AeroflyConv.Cli.csproj -c Release -r win-x64
+          --self-contained true /p:PublishSingleFile=true
+          /p:IncludeNativeLibrariesForSelfExtract=true /p:EnableCompressionInSingleFile=true
+          /p:DebugType=none -o out/cli
+
+      - name: Publish GUI
+        run: >
+          dotnet publish src/AeroflyConv.Gui/AeroflyConv.Gui.csproj -c Release -r win-x64
+          --self-contained true /p:PublishSingleFile=true
+          /p:IncludeNativeLibrariesForSelfExtract=true /p:EnableCompressionInSingleFile=true
+          /p:DebugType=none -o out/gui
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-unsigned
+          path: |
+            out/cli/HorizonConverter.exe
+            out/gui/HorizonConverter.exe
+
+  android:
+    name: Android APK
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      # The APK is signed with the debug key here; release.yml uses the real keystore.
+      - name: Build APK
+        run: dotnet build src/AeroflyConv.Android/AeroflyConv.Android.csproj -c Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-debug-signed
+          path: src/AeroflyConv.Android/bin/Release/net10.0-android/*-Signed.apk
