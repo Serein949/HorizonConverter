@@ -23,7 +23,6 @@ public enum ConversionMode
     AudioToTsb,
     TtxToTtx,
     TmbToObj,
-    LiveryPreview,
     Auto,
 }
 
@@ -97,29 +96,6 @@ public sealed class ConvertOptions
     /// <summary>Model export: flat PNGs next to the OBJ, named &lt;material&gt;_basecolor.png (Substance Painter friendly).</summary>
     public bool ModelSubstance { get; set; }
 
-    /// <summary>Livery preview: edge length of the rendered image (the shipped previews are 2048).</summary>
-    public int PreviewSize { get; set; } = 2048;
-
-    /// <summary>Livery preview: camera yaw around the model, in degrees.</summary>
-    public float PreviewYaw { get; set; } = 62f;
-
-    /// <summary>Livery preview: camera pitch, in degrees (negative looks up at the aircraft).</summary>
-    public float PreviewPitch { get; set; } = 14f;
-
-    /// <summary>Livery preview: texture format written into preview.ttx.</summary>
-    public string PreviewFormat { get; set; } = "type_rgba_s3tc_dxt5";
-
-    /// <summary>Livery preview: render an opaque background instead of transparency.</summary>
-    public bool PreviewOpaque { get; set; }
-
-        /// <summary>Two stacked copies (lower mirrored), matching the stock livery previews.</summary>
-        public bool PreviewStock { get; set; } = true;
-
-        public bool PreviewFlipU { get; set; }
-
-    /// <summary>Livery preview: anti-aliasing factor (1 disables supersampling).</summary>
-    public int PreviewSuperSample { get; set; } = 3;
-
     /// <summary>Set by <see cref="Converter.ConvertAll"/> so folder conversions mirror their layout.</summary>
     public string? MirrorRoot { get; set; }
 
@@ -155,7 +131,6 @@ public static class Converter
         ConversionMode.AudioToTsb => [".mp3", ".ogg", ".wav"],
         ConversionMode.TtxToTtx => [".ttx"],
         ConversionMode.TmbToObj => [".tmb", ".tmo"],
-        ConversionMode.LiveryPreview => [".tmb", ".tmo"],
         _ => [],
     };
 
@@ -202,7 +177,6 @@ public static class Converter
         ConversionMode.AudioToTsb => ".tsb",
         ConversionMode.TtxToTtx => ".ttx",
         ConversionMode.TmbToObj => ".obj",
-        ConversionMode.LiveryPreview => ".ttx",
         _ => ".out",
     };
 
@@ -216,8 +190,6 @@ public static class Converter
     public static string ResolveOutputPath(string input, ConversionMode mode, ConvertOptions options, string? root = null)
     {
         string name = Path.GetFileNameWithoutExtension(input) + OutputExtension(input, mode);
-        if (mode == ConversionMode.LiveryPreview)
-            name = "preview.ttx";
         string? outputRoot = root ?? options.OutputDirectory;
         if (outputRoot is null)
             return Path.Combine(Path.GetDirectoryName(input) ?? ".", name);
@@ -375,7 +347,6 @@ public static class Converter
             ConversionMode.AudioToTsb => AudioToTsb(input, output, log),
             ConversionMode.TtxToTtx => TtxToTtx(input, output, options, log),
             ConversionMode.TmbToObj => TmbToObj(input, output, options, log),
-        ConversionMode.LiveryPreview => LiveryPreview(input, output, options, log),
             _ => throw new AeroflyFormatException($"cannot detect a conversion for {Path.GetFileName(input)}"),
         };
 
@@ -786,99 +757,6 @@ public static class Converter
         if (result.MissingTextures.Count > 0)
             summary += $", {result.MissingTextures.Count} textures not found";
         return summary;
-    }
-
-    /// <summary>
-    /// Renders the model into a livery preview image and writes it as preview.ttx,
-    /// using the same camera-free composition as the files that ship with the game.
-    /// </summary>
-    private static string LiveryPreview(string input, string output, ConvertOptions options, Action<string>? log)
-    {
-        log?.Invoke($"Reading {Path.GetFileName(input)} ...");
-        TmbScene scene = TmbReader.Read(input);
-        if (scene.Geometries.Count == 0)
-            throw new AeroflyFormatException("no geometry in this file (is it a .tmb scene?)");
-
-        string modelDir = Path.GetDirectoryName(Path.GetFullPath(input)) ?? ".";
-        var cache = new Dictionary<string, RenderTexture?>(StringComparer.OrdinalIgnoreCase);
-        var renderOptions = new RenderOptions
-        {
-            Size = options.PreviewSize,
-            Yaw = options.PreviewYaw,
-            Pitch = options.PreviewPitch,
-            OpaqueBackground = options.PreviewOpaque,
-            StockPair = options.PreviewStock,
-            FlipU = options.PreviewFlipU,
-            SuperSample = options.PreviewSuperSample,
-            Margin = options.PreviewStock ? 0.16f : 0.06f,
-            StockOffset = 0.17f,
-        };
-
-        byte[] rgba = ModelRenderer.Render(scene, name => ResolveRenderTexture(modelDir, name, cache, log), renderOptions, log);
-
-        string format = TextureFormats.Canonical(options.PreviewFormat);
-        TtxFile.EncodeResult encoded = TtxFile.Encode(
-            rgba, renderOptions.Size, renderOptions.Size, format,
-            flip: false, compress: options.CompressTtx, status: log, astcQuality: options.AstcQuality);
-
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output)) ?? ".");
-        File.WriteAllBytes(output, encoded.Data);
-
-        string summary = $"{ModelRenderer.Describe(renderOptions)} -> {encoded.Format} " +
-                         $"{encoded.Width}x{encoded.Height} mips={encoded.Mips} {encoded.Data.Length:N0} bytes";
-        if (encoded.PayloadBytes > 0 && encoded.Data.Length > encoded.PayloadBytes)
-        {
-            double ratio = encoded.PayloadBytes / (double)encoded.Data.Length;
-            summary += $" (LZHAM {encoded.PayloadBytes:N0} -> {encoded.Data.Length:N0}, {ratio:0.0}x)";
-        }
-        return summary;
-    }
-
-    /// <summary>Finds and decodes a texture referenced by the model, preferring the model folder.</summary>
-    private static RenderTexture? ResolveRenderTexture(
-        string modelDir, string name, Dictionary<string, RenderTexture?> cache, Action<string>? log)
-    {
-        if (cache.TryGetValue(name, out RenderTexture? cached)) return cached;
-
-        RenderTexture? result = null;
-        foreach (string directory in ModelTextureRoots(modelDir))
-        foreach (string extension in TextureSearchOrder)
-        {
-            string candidate = Path.Combine(directory, name + extension);
-            if (!File.Exists(candidate)) continue;
-            try
-            {
-                if (extension == ".ttx")
-                {
-                    DecodedTexture texture = TtxFile.Decode(File.ReadAllBytes(candidate), flip: true);
-                    result = new RenderTexture(texture.Rgba, texture.Width, texture.Height);
-                }
-                else
-                {
-                    (byte[] rgba, int width, int height) = ImageIo.LoadRgba(candidate);
-                    result = new RenderTexture(rgba, width, height);
-                }
-            }
-            catch (Exception ex)
-            {
-                log?.Invoke($"render: could not load {Path.GetFileName(candidate)}: {ex.Message}");
-            }
-            if (result is not null) break;
-        }
-
-        cache[name] = result;
-        return result;
-    }
-
-    private static readonly string[] TextureSearchOrder = [".ttx", ".png", ".jpg"];
-
-    private static IEnumerable<string> ModelTextureRoots(string modelDir)
-    {
-        yield return modelDir;
-        string? parent = Path.GetDirectoryName(modelDir);
-        if (parent is not null) yield return parent;
-        string? grandParent = parent is null ? null : Path.GetDirectoryName(parent);
-        if (grandParent is not null) yield return grandParent;
     }
 
     /// <summary>Metadata-only description of a file (used by --info).</summary>
