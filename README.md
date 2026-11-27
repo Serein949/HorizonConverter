@@ -106,6 +106,24 @@ a350_1000_textures/        every referenced texture converted to PNG
 
 **For Substance Painter**, use `--sp`: textures are written flat next to the OBJ and named after the material — `ext05_basecolor.png`, `ext05_normal.png`, `ext05_specular.png`… which is what SP expects when you drag a texture set in.
 
+### Livery preview (TMB → preview.ttx)
+
+The livery picker in Aerofly shows a thumbnail stored as `preview.ttx` inside the livery folder.
+`-m preview` renders the model from the same angle and writes that file for you:
+
+```
+HorizonConverter a350_1000.tmb -m preview
+```
+
+- Same composition as the stock previews: two copies, the lower one mirrored, transparent background.
+- Output is 2048² DXT5 with a full mip chain and LZHAM compression (~290 KB, the stock files are ~380 KB).
+- Textures come from the livery folder that covers most of the referenced names, so fuselage and wings never mix two liveries.
+- Camera: `--preview-yaw` (default 62°), `--preview-pitch` (default 14°), `--preview-size`, `--preview-ss` (supersampling, default 3),
+  `--preview-single` for a single aircraft, `--preview-format` to change the layout of the image.
+- Takes about 2 seconds for an A350 at 2048²; the renderer is pure C# (no Blender, no GPU).
+
+![Generated livery preview](docs/livery-preview.png)
+
 ## Android app
 
 - Package `com.horizonconverter.app`, label **Horizon Converter**, identical converter core.

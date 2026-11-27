@@ -5,6 +5,24 @@
 
 ---
 
+## [1.1] - 2026-11-27
+
+### 新增
+
+- **涂装预览图（TMB → preview.ttx）**：读 `.tmb` 模型与同名涂装贴图，按游戏视角用纯 C# 软件光栅化渲染，
+  再编码成 `preview.ttx`（2048²、DXT5、完整 mip、LZHAM，约 290 KB），放回涂装目录即可在游戏涂装列表里显示。
+  - 构图与官方一致：上下两架、下方为水平镜像、透明背景
+  - 自动选取覆盖率最高的涂装文件夹，避免机身与机翼来自两套涂装
+  - 参数：`--preview-size`、`--preview-yaw`、`--preview-pitch`、`--preview-ss`、`--preview-single`、`--preview-format`、`--preview-flip-u`
+  - A350 2048² 约 2 秒；桌面 GUI 增加「Livery preview」模式
+- 版本号统一 1.1（CLI / GUI / Android）
+
+### 已知问题
+
+- 机翼、发动机等薄壳双面结构表面偶有少量白点（共面 z-fighting），调高 `--preview-ss` 可减轻
+
+---
+
 ## [1.22] - 2026-11-15
 
 ### 新增

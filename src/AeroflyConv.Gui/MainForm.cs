@@ -58,6 +58,7 @@ internal sealed class MainForm : Form
         ]),
         ("3D", [
             new NavEntry { Text = "TMB \u2192 OBJ", Mode = ConversionMode.TmbToObj },
+            new NavEntry { Text = "Livery preview", Mode = ConversionMode.LiveryPreview },
         ]),
         ("Audio", [
             new NavEntry { Text = "TSB \u2192 WAV", Mode = ConversionMode.TsbToWav },
@@ -554,13 +555,15 @@ internal sealed class MainForm : Form
             ConversionMode.TtxToPng => ("Drag && drop .ttx textures here\nor use \"Add files\"",
                 "DXT1/3/5, BC5 normal maps, ETC2, raw RGBA and R8 textures to PNG"),
             ConversionMode.PngToTtx => ("Drag && drop PNG / JPG / BMP / PSD / TIFF images here",
-                "Any ImageSharp format: re-encodes into a TTX with a full mip chain (DXT / ETC2 / ASTC / RGBA)"),
+                "PNG / JPG / BMP / GIF: re-encodes into a TTX with a full mip chain (DXT / ETC2 / ASTC / RGBA)"),
             ConversionMode.TtxToTtx => ("Drag && drop .ttx textures here",
                 "Decodes and re-encodes a texture on this machine: change format, size or compression"),
             ConversionMode.AudioToTsb => ("Drag && drop WAV / MP3 / OGG here",
                 "Wraps any audio into an Aerofly TSB sound container"),
             ConversionMode.TmbToObj => ("Drag && drop .tmb models here",
                 "3D model to OBJ + MTL with every part named and its textures matched automatically"),
+            ConversionMode.LiveryPreview => ("Drag && drop .tmb models here",
+                "Renders the aircraft and writes preview.ttx - the thumbnail the livery picker shows"),
             ConversionMode.TsbToWav => ("Drag && drop .tsb sounds here", "Mono / stereo PCM containers to WAV"),
             ConversionMode.WavToTsb => ("Drag && drop .wav files here", "Uncompressed PCM WAV to TSB"),
             ConversionMode.AudioToWav => ("Drag && drop .mp3 / .ogg files here", "Decodes to 16-bit PCM WAV"),
@@ -586,7 +589,8 @@ internal sealed class MainForm : Form
             ConversionMode.TtcToPng or ConversionMode.PngToTtc or ConversionMode.TtxToTtx or
             ConversionMode.TmbToObj;
         _mipmapsRelevant = mode == ConversionMode.PngToTtc;
-        _compressRelevant = mode is ConversionMode.PngToTtx or ConversionMode.TtxToTtx;
+        _compressRelevant = mode is ConversionMode.PngToTtx or ConversionMode.TtxToTtx or
+            ConversionMode.LiveryPreview;
         _yUpRelevant = mode == ConversionMode.TmbToObj;
         _yUpCheck.Visible = _yUpRelevant;
         _yUpCheck.Enabled = _yUpRelevant;

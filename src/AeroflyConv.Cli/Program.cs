@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using AeroflyConv.Core;
@@ -124,6 +125,30 @@ internal static class Program
                 case "--sp":
                 case "--substance":
                     options.ModelSubstance = true;
+                    break;
+                case "--preview-size":
+                    options.PreviewSize = int.Parse(RequireArg(args, ref i, arg));
+                    break;
+                case "--preview-yaw":
+                    options.PreviewYaw = float.Parse(RequireArg(args, ref i, arg), CultureInfo.InvariantCulture);
+                    break;
+                case "--preview-pitch":
+                    options.PreviewPitch = float.Parse(RequireArg(args, ref i, arg), CultureInfo.InvariantCulture);
+                    break;
+                case "--preview-format":
+                    options.PreviewFormat = RequireArg(args, ref i, arg);
+                    break;
+                case "--preview-single":
+                    options.PreviewStock = false;
+                    break;
+                case "--preview-flip-u":
+                    options.PreviewFlipU = true;
+                    break;
+                case "--preview-opaque":
+                    options.PreviewOpaque = true;
+                    break;
+                case "--preview-ss":
+                    options.PreviewSuperSample = int.Parse(RequireArg(args, ref i, arg));
                     break;
                 case "--zoom":
                     options.TtcZoom = int.Parse(RequireArg(args, ref i, arg));
@@ -261,6 +286,7 @@ internal static class Program
         "audio2tsb" or "tsbencode" => ConversionMode.AudioToTsb,
         "ttx2ttx" or "recode" or "retranscode" => ConversionMode.TtxToTtx,
         "tmb2obj" or "tmb2model" or "model" or "obj" => ConversionMode.TmbToObj,
+        "preview" or "liverypreview" or "previewttx" => ConversionMode.LiveryPreview,
         _ => throw new ArgumentException($"unknown mode: {value}"),
     };
 

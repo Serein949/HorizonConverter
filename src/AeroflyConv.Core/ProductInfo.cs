@@ -10,7 +10,7 @@ public static class ProductInfo
     public const string NameEn = "Horizon Converter";
 
     /// <summary>Numeric version (also stamped into the assemblies).</summary>
-    public const string Version = "1.0";
+    public const string Version = "1.1";
 
     /// <summary>"Horizon Converter" - single channel, no Alpha/Public split.</summary>
     public const string FullName = Name;
